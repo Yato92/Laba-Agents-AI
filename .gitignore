@@ -25,3 +25,10 @@ Thumbs.db
 
 # ---- 6. Файлы с конфиденциальной информацией ----
 .env
+
+# ---- 7. Vercel — исключаем серверный package.json ----
+package.json.backup
+database.db
+node_modules/
+server.js
+package-lock.json
