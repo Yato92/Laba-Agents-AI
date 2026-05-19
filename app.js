@@ -2,18 +2,19 @@
 //  Vein's — Full Application Logic (SPA)
 //  All data stored in localStorage
 //  EmailJS integration for sending verification codes
+//  + VK Bot sync + Ollama AI chat widget
 // ============================================================
 
 // ===================== EMAILJS CONFIG =====================
-// Для реальной отправки: зарегистрируйтесь на https://www.emailjs.com/
-// Создайте сервис, шаблон и получите ключи. Вставьте их ниже.
-// Пока работает в демо-режиме (код показывается в консоли)
 const EMAILJS_CONFIG = {
     publicKey: 'K40OdfIbGQ0Qp0_Q1',
     serviceID: 'service_k1uzenn',
     templateID: 'template_46bb7vl',
     useEmailJS: true
 };
+
+// ===================== SERVER CONFIG =====================
+const API_BASE = window.location.origin;
 
 // ===================== DATA LAYER =====================
 const DB = {
@@ -37,6 +38,7 @@ const DB = {
         const all = this.get('veins_notes', {});
         all[email] = notes;
         this.set('veins_notes', all);
+        syncNotesToServer(email, notes);
     },
 
     getContacts(email) {
@@ -50,6 +52,22 @@ const DB = {
     },
 };
 
+// ===================== СИНХРОНИЗАЦИЯ С СЕРВЕРОМ =====================
+async function syncNotesToServer(email, notes) {
+    try {
+        for (const note of notes) {
+            const response = await fetch(`${API_BASE}/api/notes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, title: note.title || '', content: note.content || '', date: note.date, deadline: note.deadline || '', priority: note.priority || 'medium', tags: note.tags || [] })
+            });
+            if (!response.ok) console.warn('⚠️ Ошибка синхронизации заметки:', note.title);
+        }
+    } catch (e) {
+        console.log('ℹ️ Сервер недоступен для синхронизации (локальный режим)');
+    }
+}
+
 // ===================== STATE =====================
 let currentUser = null;
 let editingNoteId = null;
@@ -59,7 +77,7 @@ let calYear = 2026;
 let selectedCalDate = '';
 let pendingVerificationEmail = '';
 let pendingVerificationCode = '';
-let verificationPurpose = ''; // 'register' | 'reset'
+let verificationPurpose = '';
 let lastResendTime = 0;
 
 // ===================== HELPERS =====================
@@ -121,14 +139,12 @@ function showPage(pageId) {
     if (page) page.classList.add('active');
 }
 
-// ===================== AUTH PAGES NAV =====================
 function showAuthPage(page) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.getElementById('page-' + page).classList.add('active');
 }
 
 // ===================== AUTH =====================
-// --- REGISTER ---
 document.getElementById('registerForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const email = document.getElementById('regEmail').value.trim().toLowerCase();
@@ -136,77 +152,56 @@ document.getElementById('registerForm').addEventListener('submit', function(e) {
     const password = document.getElementById('regPassword').value;
     const password2 = document.getElementById('regPassword2').value;
     const errEl = document.getElementById('regError');
-
-    if (!email || !username || !password || !password2) {
-        errEl.textContent = 'Заполните все поля'; return;
-    }
+    if (!email || !username || !password || !password2) { errEl.textContent = 'Заполните все поля'; return; }
     if (!email.includes('@')) { errEl.textContent = 'Введите корректный email'; return; }
     if (password.length < 6) { errEl.textContent = 'Пароль должен быть минимум 6 символов'; return; }
     if (password !== password2) { errEl.textContent = 'Пароли не совпадают'; return; }
-
     const users = DB.getUsers();
     if (users[email]) { errEl.textContent = 'Пользователь с таким email уже существует'; return; }
-
-    // Сохраняем данные временно
     pendingVerificationEmail = email;
     DB.set('veins_pending_reg', { email, name: username, password });
     verificationPurpose = 'register';
-
     errEl.textContent = '';
     sendVerificationCode(email);
 });
 
-// --- LOGIN ---
 document.getElementById('loginForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const email = document.getElementById('loginEmail').value.trim().toLowerCase();
     const password = document.getElementById('loginPassword').value;
     const errEl = document.getElementById('loginError');
-
     if (!email || !password) { errEl.textContent = 'Заполните все поля'; return; }
-
     const users = DB.getUsers();
     const user = users[email];
-
     if (!user) { errEl.textContent = 'Пользователь с таким email не найден'; return; }
     if (user.password !== password) { errEl.textContent = 'Неверный пароль'; return; }
-
     errEl.textContent = '';
-    
-    // Вход успешен — сразу переходим в приложение
     currentUser = user;
     DB.setCurrentUser(user);
     initApp();
 });
 
-// --- FORGOT PASSWORD ---
 document.getElementById('forgotForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const email = document.getElementById('forgotEmail').value.trim().toLowerCase();
     const errEl = document.getElementById('forgotError');
-
     if (!email) { errEl.textContent = 'Введите email'; return; }
-
     const users = DB.getUsers();
     if (!users[email]) { errEl.textContent = 'Пользователь с таким email не найден'; return; }
-
     pendingVerificationEmail = email;
     verificationPurpose = 'reset';
     errEl.textContent = '';
     sendVerificationCode(email);
 });
 
-// --- RESET PASSWORD ---
 document.getElementById('resetForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const password = document.getElementById('resetPassword').value;
     const password2 = document.getElementById('resetPassword2').value;
     const errEl = document.getElementById('resetError');
-
     if (!password || !password2) { errEl.textContent = 'Заполните все поля'; return; }
     if (password.length < 6) { errEl.textContent = 'Пароль должен быть минимум 6 символов'; return; }
     if (password !== password2) { errEl.textContent = 'Пароли не совпадают'; return; }
-
     const users = DB.getUsers();
     if (users[pendingVerificationEmail]) {
         users[pendingVerificationEmail].password = password;
@@ -223,45 +218,19 @@ function sendVerificationCode(email) {
     const code = generateCode();
     pendingVerificationEmail = email;
     pendingVerificationCode = code;
-
-    // Отображаем код в консоли (на случай если EmailJS не настроен)
     console.log(`%c[Vein's] Код подтверждения для ${email}: ${code}`, 'color:#3B82F6;font-size:16px;font-weight:bold;');
-    
-    // Показываем код на странице
     document.getElementById('verifyHint').innerHTML = `Код отправлен на <strong>${email}</strong>. Демо-код: <strong style="color:#3B82F6;font-size:18px;">${code}</strong>`;
     document.getElementById('verifyStatus').textContent = '';
     document.getElementById('verifyStatus').className = 'verify-status';
-    
-    // Очищаем поля ввода кода
     document.querySelectorAll('.code-digit').forEach(inp => inp.value = '');
-
-    // Пробуем отправить через EmailJS
     if (EMAILJS_CONFIG.useEmailJS && emailjs) {
         try {
             emailjs.init(EMAILJS_CONFIG.publicKey);
-            emailjs.send(EMAILJS_CONFIG.serviceID, EMAILJS_CONFIG.templateID, {
-                to_email: email,
-                to_name: email.split('@')[0],
-                verification_code: code,
-                message: `Ваш код подтверждения: ${code}`
-            }).then(() => {
-                document.getElementById('verifyHint').innerHTML = `Код отправлен на <strong>${email}</strong>`;
-            }).catch(() => {
-                // Если EmailJS не сработал, оставляем демо-режим
-            });
-        } catch(e) {}
+            emailjs.send(EMAILJS_CONFIG.serviceID, EMAILJS_CONFIG.templateID, { to_email: email, to_name: email.split('@')[0], verification_code: code, message: `Ваш код подтверждения: ${code}` }).then(() => { document.getElementById('verifyHint').innerHTML = `Код отправлен на <strong>${email}</strong>`; }).catch(() => {});
+        } catch (e) {}
     }
-
-    // Переходим на страницу подтверждения
-    if (verificationPurpose === 'reset') {
-        document.getElementById('verifySubtitle').textContent = 'Введите код для сброса пароля';
-    } else {
-        document.getElementById('verifySubtitle').textContent = 'Мы отправили код на вашу почту';
-    }
-    
+    document.getElementById('verifySubtitle').textContent = verificationPurpose === 'reset' ? 'Введите код для сброса пароля' : 'Мы отправили код на вашу почту';
     showAuthPage('verify');
-    
-    // Фокус на первый инпут
     const firstInput = document.querySelector('.code-digit');
     if (firstInput) firstInput.focus();
 }
@@ -271,52 +240,29 @@ function verifyCode() {
     const inputs = document.querySelectorAll('.code-digit');
     const code = Array.from(inputs).map(i => i.value).join('');
     const status = document.getElementById('verifyStatus');
-
-    if (code.length !== 6) {
-        status.textContent = 'Введите 6-значный код';
-        status.className = 'verify-status error';
-        return;
-    }
-
-    // Демо: любой 6-значный код или совпадающий с отправленным
-    if (code !== pendingVerificationCode && code !== '123456') {
-        status.textContent = 'Неверный код!';
-        status.className = 'verify-status error';
-        return;
-    }
-
+    if (code.length !== 6) { status.textContent = 'Введите 6-значный код'; status.className = 'verify-status error'; return; }
+    if (code !== pendingVerificationCode && code !== '123456') { status.textContent = 'Неверный код!'; status.className = 'verify-status error'; return; }
     status.textContent = 'УСПЕШНО!';
     status.className = 'verify-status success';
-
     if (verificationPurpose === 'register') {
-        // Создаём пользователя
         const pending = DB.get('veins_pending_reg');
         if (pending) {
             const users = DB.getUsers();
             users[pending.email] = { email: pending.email, name: pending.name, password: pending.password, createdAt: new Date().toISOString() };
             DB.saveUsers(users);
             DB.remove('veins_pending_reg');
-            
             currentUser = users[pending.email];
             DB.setCurrentUser(currentUser);
-            
             setTimeout(() => initApp(), 1000);
         }
     } else if (verificationPurpose === 'reset') {
-        // Переходим на страницу смены пароля
-        setTimeout(() => {
-            showAuthPage('reset');
-        }, 1000);
+        setTimeout(() => { showAuthPage('reset'); }, 1000);
     }
 }
 
-// ===================== RESEND CODE =====================
 function resendCode() {
     const now = Date.now();
-    if (now - lastResendTime < 30000) {
-        showToast('Подождите 30 секунд перед повторной отправкой', 'info');
-        return;
-    }
+    if (now - lastResendTime < 30000) { showToast('Подождите 30 секунд перед повторной отправкой', 'info'); return; }
     lastResendTime = now;
     sendVerificationCode(pendingVerificationEmail);
     showToast('Код отправлен снова!', 'success');
@@ -330,6 +276,8 @@ function logout() {
     showAuthPage('login');
     document.getElementById('loginForm').reset();
     showToast('Вы вышли из аккаунта', 'info');
+    const panel = document.getElementById('chatWidgetPanel');
+    if (panel) panel.classList.remove('open');
 }
 
 // ===================== TOAST =====================
@@ -355,12 +303,45 @@ document.querySelectorAll('.code-digit').forEach((input, idx, inputs) => {
     });
 });
 
-// ===================== INIT APP (after login) =====================
+// ===================== VK OAuth LOGIN =====================
+async function loginWithVK() {
+    try {
+        const response = await fetch(`${API_BASE}/api/vk-oauth-url`);
+        const data = await response.json();
+        if (data.url) { window.location.href = data.url; }
+        else { showToast('⚠️ Ошибка получения ссылки VK', 'error'); }
+    } catch (e) { showToast('⚠️ Сервер недоступен', 'error'); }
+}
+
+function handleVkAuthCallback() {
+    const params = new URLSearchParams(window.location.search);
+    const vkAuthData = params.get('vk_auth');
+    if (vkAuthData) {
+        try {
+            const userData = JSON.parse(decodeURIComponent(vkAuthData));
+            const { email, name, vkId } = userData;
+            const users = DB.getUsers();
+            if (!users[email]) {
+                users[email] = { email, name, password: 'vk_oauth_' + vkId, createdAt: new Date().toISOString() };
+                DB.saveUsers(users);
+            }
+            currentUser = users[email];
+            DB.setCurrentUser(currentUser);
+            DB.set('veins_vk_id_' + email, vkId);
+            window.history.replaceState({}, document.title, window.location.pathname);
+            showToast(`✅ Вход через VK: ${name}`, 'success');
+            setTimeout(() => initApp(), 500);
+            return true;
+        } catch (e) { console.error('VK auth error:', e); }
+    }
+    return false;
+}
+
+// ===================== INIT APP =====================
 function initApp() {
     showPage('page-app');
     if (!currentUser) currentUser = DB.getCurrentUser();
     if (!currentUser) return;
-
     updateTopBar();
     updateProfileDisplay();
     loadTheme();
@@ -370,11 +351,14 @@ function initApp() {
     selectedCalDate = getTodayStr();
     renderAll();
     navigateTo('workspace');
+    document.getElementById('chatWidgetBtn').style.display = 'flex';
+    setTimeout(() => {
+        const notes = getNotes();
+        if (notes.length > 0) syncNotesToServer(currentUser.email, notes);
+    }, 2000);
 }
 
-function initDemoData() {
-    // Новый пользователь начинает с пустыми заметками и контактами
-}
+function initDemoData() {}
 
 function updateTopBar() {
     const name = currentUser.name || '';
@@ -482,6 +466,7 @@ function updateProfileDisplay() {
     const city = p.city || '';
     const position = p.position || '';
     const team = p.team || '';
+    const vkId = DB.get('veins_vk_id_' + currentUser.email, '');
     document.getElementById('profName').textContent = name;
     document.getElementById('profEmail').textContent = email;
     document.getElementById('profPhone').textContent = phone;
@@ -489,6 +474,7 @@ function updateProfileDisplay() {
     document.getElementById('profCity').textContent = city;
     document.getElementById('profPosition').textContent = position;
     document.getElementById('profTeam').textContent = team;
+    document.getElementById('profVkId').textContent = vkId || 'Не привязан';
     loadAvatar();
     updateTopBar();
 }
@@ -528,6 +514,24 @@ function deleteAccount() {
     showAuthPage('login');
 }
 
+// ===================== ПРИВЯЗКА VK =====================
+async function linkVkAccount() {
+    const vkId = document.getElementById('vkLinkInput').value.trim();
+    if (!vkId) { showToast('Введите ваш VK ID (число)', 'error'); return; }
+    if (!/^\d+$/.test(vkId)) { showToast('VK ID должен быть числом', 'error'); return; }
+    DB.set('veins_vk_id_' + currentUser.email, vkId);
+    try {
+        const response = await fetch(`${API_BASE}/api/link-vk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: currentUser.email, vk_id: vkId }) });
+        if (response.ok) {
+            showToast('✅ VK ID привязан!', 'success');
+            showToast('💬 Чтобы получать уведомления, напишите боту:\nhttps://vk.me/club238851353\n\nПосле этого все уведомления будут приходить в VK!', 'info');
+        }
+        else showToast('⚠️ VK ID сохранён локально (сервер недоступен)', 'info');
+    } catch (e) { showToast('⚠️ VK ID сохранён локально (сервер недоступен)', 'info'); }
+    updateProfileDisplay();
+    document.getElementById('vkLinkInput').value = '';
+}
+
 // ===================== NOTES =====================
 function getNotes() { return DB.getNotes(currentUser.email); }
 function saveNotesArr(notes) { DB.saveNotes(currentUser.email, notes); }
@@ -535,10 +539,7 @@ function saveNotesArr(notes) { DB.saveNotes(currentUser.email, notes); }
 function renderNotes() {
     const container = document.getElementById('notesList');
     const notes = getNotes();
-    if (notes.length === 0) {
-        container.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text-secondary);font-size:14px;">${tr('noNotes')}</div>`;
-        return;
-    }
+    if (notes.length === 0) { container.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text-secondary);font-size:14px;">${tr('noNotes')}</div>`; return; }
     const today = getTodayStr();
     container.innerHTML = notes.slice().reverse().map(n => {
         const isOverdue = n.deadline && n.deadline < today;
@@ -699,7 +700,7 @@ function renderImportantTasks() {
     }).join('');
 }
 
-// ===================== CONTACTS (на главной слева) =====================
+// ===================== CONTACTS =====================
 function renderContacts() {
     const container = document.getElementById('contactsList');
     const contacts = DB.getContacts(currentUser.email);
@@ -773,6 +774,265 @@ function openModal(id) { document.getElementById(id).classList.add('active'); do
 function closeModal(id) { document.getElementById(id).classList.remove('active'); document.body.style.overflow = ''; }
 document.querySelectorAll('.modal-overlay').forEach(el => { el.addEventListener('click', function(e) { if (e.target === this) { this.classList.remove('active'); document.body.style.overflow = ''; } }); });
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape') { document.querySelectorAll('.modal-overlay.active').forEach(m => { m.classList.remove('active'); document.body.style.overflow = ''; }); } });
+
+// ===================== OLLAMA ЧАТ-ВИДЖЕТ =====================
+
+let cwHistory = [];
+let cwIsLoading = false;
+
+function toggleChatWidget() {
+    const panel = document.getElementById('chatWidgetPanel');
+    const btn = document.getElementById('chatWidgetBtn');
+    if (panel.classList.contains('open')) {
+        panel.classList.remove('open');
+        btn.style.display = 'flex';
+    } else {
+        panel.classList.add('open');
+        btn.style.display = 'none';
+        checkOllamaStatus();
+        document.getElementById('cwInput').focus();
+    }
+}
+
+async function checkOllamaStatus() {
+    const statusDot = document.getElementById('cwStatus');
+    if (!currentUser) {
+        statusDot.classList.add('offline');
+        addCwMessage('ai', '👋 Привет! Я ИИ-ассистент.\n\n🔑 Чтобы начать работу, нужно войти в аккаунт.\n\nНажми кнопку "Войти через VK" ниже 👇');
+        document.querySelector('.cw-suggestions').innerHTML = `
+            <button onclick="loginWithVK()" style="width:100%;padding:12px;background:#4A76A8;color:white;border:none;border-radius:10px;font-size:14px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;gap:8px;font-weight:600;">
+                🔵 Войти через VK
+            </button>
+            <button onclick="showAuthPage('login');toggleChatWidget()" style="flex:1;background:var(--primary);color:white;border:none;border-radius:8px;padding:8px;font-size:12px;cursor:pointer;font-family:var(--font);">
+                📧 Войти по email
+            </button>
+        `;
+        return;
+    }
+    try {
+        const response = await fetch(`${API_BASE}/api/ollama`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: 'test' }) });
+        const data = await response.json();
+        if (data.success) {
+            statusDot.classList.remove('offline');
+            addCwMessage('ai', '🤖 ИИ-ассистент подключён и готов к работе!');
+        } else {
+            statusDot.classList.add('offline');
+            addCwMessage('ai', '⚠️ Ollama не запущена. Напишите "ollama serve" в терминале.\n\nℹ️ Бот будет отвечать без ИИ.');
+        }
+    } catch (e) {
+        statusDot.classList.add('offline');
+        addCwMessage('ai', '⚠️ Сервер Ollama недоступен.\nℹ️ Бот будет работать в офлайн-режиме.');
+    }
+}
+
+function addCwMessage(role, text) {
+    const container = document.getElementById('cwMessages');
+    const div = document.createElement('div');
+    div.className = `cw-message ${role}`;
+    div.textContent = text;
+    const meta = document.createElement('div');
+    meta.className = 'cw-meta';
+    meta.textContent = role === 'ai' ? '🤖 Vein\'s AI' : 'Вы';
+    div.appendChild(meta);
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function removeTypingIndicator() {
+    const typing = document.getElementById('cwTypingIndicator');
+    if (typing) typing.remove();
+}
+
+function showTypingIndicator() {
+    removeTypingIndicator();
+    const container = document.getElementById('cwMessages');
+    const div = document.createElement('div');
+    div.className = 'cw-message ai';
+    div.id = 'cwTypingIndicator';
+    div.innerHTML = '<div class="cw-typing"><span></span><span></span><span></span></div>';
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function sendSuggestedMessage(text) {
+    document.getElementById('cwInput').value = text;
+    sendChatWidgetMessage();
+}
+
+async function sendChatWidgetMessage() {
+    const input = document.getElementById('cwInput');
+    const text = input.value.trim();
+    if (!text || cwIsLoading) return;
+
+    input.value = '';
+    cwIsLoading = true;
+    document.getElementById('cwSendBtn').disabled = true;
+
+    addCwMessage('user', text);
+
+    const lower = text.toLowerCase();
+
+    if (lower.includes('создай заметку') || lower.includes('создать заметку') || lower.includes('новая заметка') || lower.includes('запиши')) {
+        let title = text.replace(/созда(й|ть)\s*заметку/i, '').replace(/новая\s*заметка/i, '').replace(/запиши/i, '').trim();
+        if (!title) title = 'Заметка от ИИ';
+        const dateMatch = text.match(/дедлайн[:\s]*(\d{1,2})[.\/](\d{1,2})(?:[.\/](\d{4}))?/i);
+        let deadline = '';
+        if (dateMatch) {
+            const d = dateMatch[1].padStart(2, '0');
+            const m = dateMatch[2].padStart(2, '0');
+            const y = dateMatch[3] || new Date().getFullYear();
+            deadline = `${y}-${m}-${d}`;
+        }
+        const note = { id: generateId(), title, content: title, tags: ['#заметка', '#ai'], date: getTodayStr(), deadline, priority: 'medium' };
+        let notes = getNotes();
+        notes.push(note);
+        saveNotesArr(notes);
+        renderNotes(); renderCalendar(); renderSelectedDayNotes(); renderImportantTasks();
+        let reply = `✅ Заметка создана!\n\n📌 ${title}`;
+        if (deadline) reply += `\n⏰ Дедлайн: ${deadline}`;
+        addCwMessage('ai', reply);
+        cwIsLoading = false;
+        document.getElementById('cwSendBtn').disabled = false;
+        return;
+    }
+
+    if (lower === 'мои заметки' || lower === 'заметки' || lower === 'список' || lower === 'notes') {
+        const notes = getNotes();
+        if (notes.length === 0) { addCwMessage('ai', '📭 У вас пока нет заметок. Напишите "создай заметку [название]"'); }
+        else {
+            let msg = `📋 *Ваши заметки (${notes.length}):*\n\n`;
+            notes.slice(-5).reverse().forEach((n, i) => {
+                const emoji = { low: '🟢', medium: '🟡', high: '🔴', critical: '🔥' };
+                msg += `${emoji[n.priority] || '📝'} ${n.title.substring(0, 50)}`;
+                if (n.deadline) msg += ` (⏰ ${n.deadline})`;
+                msg += '\n';
+            });
+            if (notes.length > 5) msg += `\n📌 Показаны 5 последних из ${notes.length}`;
+            addCwMessage('ai', msg);
+        }
+        cwIsLoading = false; document.getElementById('cwSendBtn').disabled = false;
+        return;
+    }
+
+    if (lower.includes('дедлайн') || lower === 'сроки' || lower === 'deadlines') {
+        const notes = getNotes();
+        const deadlines = notes.filter(n => n.deadline).sort((a, b) => a.deadline.localeCompare(b.deadline));
+        if (deadlines.length === 0) { addCwMessage('ai', '✅ Нет задач с дедлайнами.'); }
+        else {
+            const today = getTodayStr();
+            let msg = `⏰ *Ближайшие дедлайны:*\n\n`;
+            deadlines.slice(0, 10).forEach((n, i) => {
+                const isOverdue = n.deadline < today;
+                const isToday = n.deadline === today;
+                const daysLeft = Math.ceil((new Date(n.deadline) - new Date()) / (1000 * 60 * 60 * 24));
+                let icon = isOverdue ? '⚠️' : isToday ? '🔴' : '📅';
+                if (daysLeft === 1) icon = '⏰';
+                msg += `${icon} ${n.title.substring(0, 30)} — ${n.deadline}`;
+                if (!isOverdue && daysLeft > 0 && daysLeft < 30) msg += ` (осталось ${daysLeft} дн.)`;
+                if (isToday) msg += ` (СЕГОДНЯ!)`;
+                if (isOverdue) msg += ` (ПРОСРОЧЕНО!)`;
+                if (daysLeft === 1) msg += ` (ЗАВТРА!)`;
+                msg += '\n';
+            });
+            addCwMessage('ai', msg);
+        }
+        cwIsLoading = false; document.getElementById('cwSendBtn').disabled = false;
+        return;
+    }
+
+    if (lower.includes('что ты умеешь') || lower === 'помощь' || lower === 'help' || lower === 'команды') {
+        addCwMessage('ai',
+            `🤖 *Vein's AI Assistant*\n\n` +
+            `📝 *Доступные команды:*\n\n` +
+            `• "создай заметку [текст]" — новая заметка\n` +
+            `  (можно добавить "дедлайн 25.12.2026")\n` +
+            `• "мои заметки" — список последних заметок\n` +
+            `• "дедлайны" — все задачи со сроками\n` +
+            `• "помощь" — эта справка\n\n` +
+            `🤖 *Любой другой вопрос* — отвечает ИИ (когда Ollama подключена)\n\n` +
+            `💡 *Совет:* В личном кабинете вы можете привязать VK ID\n` +
+            `и получать уведомления о заметках в ВКонтакте!`
+        );
+        cwIsLoading = false; document.getElementById('cwSendBtn').disabled = false;
+        return;
+    }
+
+    try {
+        showTypingIndicator();
+        const notes = getNotes();
+        const deadlines = notes.filter(n => n.deadline).map(n => `- "${n.title}" (дедлайн: ${n.deadline}, приоритет: ${n.priority})`).join('\n');
+        const userName = currentUser ? currentUser.name : 'Пользователь';
+        const userEmail = currentUser ? currentUser.email : 'unknown@user';
+        const context = deadlines
+            ? `Имя пользователя: ${userName}. email: ${userEmail}. У пользователя есть заметки с дедлайнами:\n${deadlines}\n\nВсего заметок: ${notes.length}`
+            : `Имя пользователя: ${userName}. email: ${userEmail}. У пользователя ${notes.length} заметок. Дедлайнов нет.`;
+
+        const response = await fetch(`${API_BASE}/api/ollama`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: text, context: `Ты помогаешь с заметками. ${context}` })
+        });
+        const data = await response.json();
+        removeTypingIndicator();
+
+        if (data.success && data.response) {
+            addCwMessage('ai', data.response);
+
+            if (data.note_created && data.note) {
+                const n = data.note;
+                const newNote = { id: n.id, title: n.title || 'Заметка от AI', content: n.description || n.title || '', tags: ['#заметка', '#ai'], date: n.date || getTodayStr(), deadline: n.deadline || '', priority: n.importance || 'medium' };
+                let notes = getNotes();
+                notes.push(newNote);
+                saveNotesArr(notes);
+                renderNotes(); renderCalendar(); renderSelectedDayNotes(); renderImportantTasks();
+                showToast(`✅ Заметка "${n.title}" создана AI!`, 'success');
+
+                const vkId = DB.get('veins_vk_id_' + currentUser.email, '');
+                if (vkId) {
+                    try { await fetch(`${API_BASE}/api/notify-vk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vk_id: vkId, note: n, action: 'created' }) }); } catch (e) {}
+                }
+            }
+
+            if (data.response.includes('#NAVIGATE')) {
+                const navMatch = data.response.match(/#NAVIGATE\s+(\w+)/);
+                if (navMatch) {
+                    const page = navMatch[1];
+                    if (page === 'profile') navigateTo('profile');
+                    else if (page === 'contacts') navigateTo('contacts');
+                    else navigateTo('workspace');
+                    showToast(`📄 Открываю "${page === 'profile' ? 'личный кабинет' : page === 'contacts' ? 'контакты' : 'рабочее пространство'}"`, 'info');
+                }
+                return;
+            }
+        } else {
+            addCwMessage('ai', '🤖 ИИ временно недоступен. Попробуйте позже, когда Ollama будет запущена.\n\nℹ️ Доступные команды: "создай заметку", "мои заметки", "дедлайны"');
+        }
+    } catch (e) {
+        removeTypingIndicator();
+        addCwMessage('ai', '⚠️ Ошибка подключения к ИИ. Проверьте, запущен ли сервер и Ollama (ollama serve).');
+    }
+
+    cwIsLoading = false;
+    document.getElementById('cwSendBtn').disabled = false;
+}
+
+// ===================== ПРОВЕРКА ДЕДЛАЙНОВ (на сайте) =====================
+function checkDeadlinesOnSite() {
+    if (!currentUser) return;
+    const notes = getNotes();
+    const today = getTodayStr();
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+    let notifications = [];
+    notes.forEach(note => {
+        if (!note.deadline) return;
+        if (note.deadline === today && !note._notifiedSite) { notifications.push(`⚠️ ДЕДЛАЙН СЕГОДНЯ: "${note.title}"`); note._notifiedSite = true; }
+        if (note.deadline === tomorrow && !note._notifiedSite) { notifications.push(`⏰ Напоминание: "${note.title}" — дедлайн ЗАВТРА`); note._notifiedSite = true; }
+    });
+    if (notifications.length > 0) {
+        notifications.forEach(msg => { showToast(msg, 'warning'); });
+        saveNotesArr(notes);
+    }
+}
 
 // ===================== LANGUAGE =====================
 const translations = {
@@ -866,12 +1126,10 @@ function localize(lang) {
     if (legendSpans.length >= 3) { legendSpans[0].innerHTML = `<span class="legend-dot dot-default"></span> ${t.calendarLegend[0]}`; legendSpans[1].innerHTML = `<span class="legend-dot dot-deadline"></span> ${t.calendarLegend[1]}`; legendSpans[2].innerHTML = `<span class="legend-dot dot-important"></span> ${t.calendarLegend[2]}`; }
     const profileHeader = document.querySelector('#page-profile .content-header h1');
     if (profileHeader) profileHeader.innerHTML = `<i class="fas fa-user-circle"></i> ${t.profileTitle}`;
-    // Update calendar notes header
     const calNotesHeader = document.querySelector('.calendar-day-notes h3');
     if (calNotesHeader) { const dateSpan = document.getElementById('calSelectedDate'); const dateText = dateSpan ? dateSpan.textContent : ''; calNotesHeader.innerHTML = `${t.noteOn} <span id="calSelectedDate">${dateText}</span>`; }
     const addNoteBtn = document.querySelector('.calendar-day-notes .btn-primary');
     if (addNoteBtn) addNoteBtn.innerHTML = `<i class="fas fa-plus"></i> ${t.addNote}`;
-    // Profile edit form labels
     var epNameLabel = document.querySelector('#editProfileForm .form-group:nth-child(1) label');
     var epEmailLabel = document.querySelector('#editProfileForm .form-group:nth-child(2) label');
     var epPhoneLabel = document.querySelector('#editProfileForm .form-group:nth-child(3) label');
@@ -890,9 +1148,15 @@ function localize(lang) {
 
 // ===================== BOOTSTRAP =====================
 (function bootstrap() {
-    calMonth = 4; calYear = 2026;
+    calMonth = new Date().getMonth();
+    calYear = new Date().getFullYear();
     selectedCalDate = getTodayStr();
+    if (handleVkAuthCallback()) { return; }
     const saved = DB.getCurrentUser();
     if (saved) { currentUser = saved; initApp(); }
-    else { showAuthPage('login'); }
+    else { showAuthPage('login'); document.getElementById('chatWidgetBtn').style.display = 'none'; }
+    setTimeout(() => {
+        checkDeadlinesOnSite();
+        setInterval(checkDeadlinesOnSite, 5 * 60 * 1000);
+    }, 10000);
 })();
