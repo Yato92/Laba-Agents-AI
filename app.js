@@ -457,7 +457,7 @@ function navigateTo(page) {
     if (content) content.classList.add('active');
     const lang = getCurrentLang();
     const t = translations[lang] || translations.ru;
-    const titles = { workspace: t.topBarWorkspace, profile: t.topBarProfile };
+    const titles = { workspace: t.topBarWorkspace, profile: t.topBarProfile, contacts: t.topBarContacts };
     document.querySelector('.top-bar-title').textContent = titles[page] || t.topBarWorkspace;
     if (page === 'workspace') { renderNotes(); renderCalendar(); renderSelectedDayNotes(); renderImportantTasks(); }
     if (page === 'profile') updateProfileDisplay();
@@ -853,7 +853,7 @@ function localize(lang) {
     if (bottomNav.length >= 1) { bottomNav[0].querySelector('span').textContent = t.sidebarSettings; }
     const activePage = document.querySelector('.page-content.active');
     const pageId = activePage?.id?.replace('page-', '');
-    const titles = { workspace: t.topBarWorkspace, profile: t.topBarProfile };
+    const titles = { workspace: t.topBarWorkspace, profile: t.topBarProfile, contacts: t.topBarContacts };
     document.querySelector('.top-bar-title').textContent = titles[pageId] || t.topBarWorkspace;
     document.getElementById('langLabel').textContent = t.langLabel;
     document.getElementById('themeLabel').textContent = t.themeLabel;
