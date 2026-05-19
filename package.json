@@ -1,0 +1,14 @@
+{
+  "name": "veins-notes-server",
+  "version": "1.0.0",
+  "description": "Сервер регистрации пользователей для Vein's Notes",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "sqlite3": "^5.1.7",
+    "bcrypt": "^5.1.1"
+  }
+}

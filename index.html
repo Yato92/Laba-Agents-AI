@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vein's — Управление заметками</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+    <!-- ==================== СТРАНИЦА ВХОДА ==================== -->
+    <div id="page-login" class="page">
+        <div class="auth-logo">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Vein's</span>
+        </div>
+        <div class="auth-card">
+            <h1>Вход</h1>
+            <p class="auth-subtitle">Войдите в свой аккаунт</p>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="loginEmail" placeholder="Введите Email-адрес..." required>
+                </div>
+                <div class="form-group">
+                    <label>Пароль</label>
+                    <input type="password" id="loginPassword" placeholder="Введите пароль..." required>
+                </div>
+                <p class="form-error" id="loginError"></p>
+                <button type="submit" class="btn btn-primary btn-full">Войти</button>
+            </form>
+            <div class="auth-links">
+                <a href="#" onclick="showAuthPage('register')">Нет аккаунта? Зарегистрироваться</a>
+                <a href="#" onclick="showAuthPage('forgot')">Забыли пароль?</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== СТРАНИЦА РЕГИСТРАЦИИ ==================== -->
+    <div id="page-register" class="page">
+        <div class="auth-logo">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Vein's</span>
+        </div>
+        <div class="auth-card">
+            <h1>Регистрация</h1>
+            <p class="auth-subtitle">Создайте аккаунт для работы с заметками</p>
+            <form id="registerForm">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="regEmail" placeholder="Введите Email-адрес..." required>
+                </div>
+                <div class="form-group">
+                    <label>UserName</label>
+                    <input type="text" id="regUsername" placeholder="Введите имя пользователя..." required>
+                </div>
+                <div class="form-group">
+                    <label>Пароль</label>
+                    <input type="password" id="regPassword" placeholder="Введите пароль..." minlength="6" required>
+                </div>
+                <div class="form-group">
+                    <label>Подтвердите пароль</label>
+                    <input type="password" id="regPassword2" placeholder="Введите пароль еще раз..." required>
+                </div>
+                <p class="form-error" id="regError"></p>
+                <button type="submit" class="btn btn-primary btn-full">Зарегистрироваться</button>
+            </form>
+            <div class="auth-links">
+                <a href="#" onclick="showAuthPage('login')">Уже есть аккаунт? Войти</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== СТРАНИЦА ПОДТВЕРЖДЕНИЯ КОДА (рега/вход) ==================== -->
+    <div id="page-verify" class="page">
+        <div class="auth-logo">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Vein's</span>
+        </div>
+        <div class="auth-card verify-card">
+            <h1>Подтверждение</h1>
+            <p class="auth-subtitle" id="verifySubtitle">Мы отправили код на вашу почту</p>
+            <div class="code-inputs" id="codeInputs">
+                <input type="text" maxlength="1" class="code-digit" inputmode="numeric" pattern="[0-9]">
+                <input type="text" maxlength="1" class="code-digit" inputmode="numeric" pattern="[0-9]">
+                <input type="text" maxlength="1" class="code-digit" inputmode="numeric" pattern="[0-9]">
+                <input type="text" maxlength="1" class="code-digit" inputmode="numeric" pattern="[0-9]">
+                <input type="text" maxlength="1" class="code-digit" inputmode="numeric" pattern="[0-9]">
+                <input type="text" maxlength="1" class="code-digit" inputmode="numeric" pattern="[0-9]">
+            </div>
+            <p class="verify-status" id="verifyStatus"></p>
+            <p class="auth-subtitle" style="margin-top:8px;font-size:13px;" id="verifyHint">Код выслан на вашу почту. Если письма нет, проверьте спам или запросите код снова.</p>
+            <button class="btn btn-primary btn-full" onclick="verifyCode()">Подтвердить</button>
+            <p class="auth-subtitle" style="margin-top:8px;font-size:12px;"><a href="#" onclick="resendCode()" style="color:#3B82F6;">Отправить код снова</a></p>
+        </div>
+    </div>
+
+    <!-- ==================== СТРАНИЦА ВОССТАНОВЛЕНИЯ ПАРОЛЯ ==================== -->
+    <div id="page-forgot" class="page">
+        <div class="auth-logo">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Vein's</span>
+        </div>
+        <div class="auth-card">
+            <h1>Восстановление пароля</h1>
+            <p class="auth-subtitle">Введите email, мы отправим код для сброса пароля</p>
+            <form id="forgotForm">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="forgotEmail" placeholder="Введите Email-адрес..." required>
+                </div>
+                <p class="form-error" id="forgotError"></p>
+                <button type="submit" class="btn btn-primary btn-full">Отправить код</button>
+            </form>
+            <div class="auth-links">
+                <a href="#" onclick="showAuthPage('login')">Вспомнили пароль? Войти</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== СТРАНИЦА СБРОСА ПАРОЛЯ (НОВЫЙ ПАРОЛЬ) ==================== -->
+    <div id="page-reset" class="page">
+        <div class="auth-logo">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Vein's</span>
+        </div>
+        <div class="auth-card">
+            <h1>Новый пароль</h1>
+            <p class="auth-subtitle">Придумайте новый пароль для входа</p>
+            <form id="resetForm">
+                <div class="form-group">
+                    <label>Новый пароль</label>
+                    <input type="password" id="resetPassword" placeholder="Введите новый пароль..." minlength="6" required>
+                </div>
+                <div class="form-group">
+                    <label>Подтвердите пароль</label>
+                    <input type="password" id="resetPassword2" placeholder="Введите пароль еще раз..." required>
+                </div>
+                <p class="form-error" id="resetError"></p>
+                <button type="submit" class="btn btn-primary btn-full">Сохранить пароль</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ==================== ГЛАВНОЕ ПРИЛОЖЕНИЕ (ПОСЛЕ ВХОДА) ==================== -->
+    <div id="page-app" class="page app-layout">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-logo">
+                <svg width="28" height="28" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>Vein's</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-page="workspace"><i class="fas fa-th-large"></i><span>Главная</span></a>
+                <a href="#" class="nav-item" data-page="profile"><i class="fas fa-user"></i><span>Личный кабинет</span></a>
+                <a href="#" class="nav-item" data-page="contacts"><i class="fas fa-address-book"></i><span>Контакты</span></a>
+            </nav>
+            <div class="sidebar-bottom">
+                <a href="#" class="nav-item" onclick="scrollToSettings()"><i class="fas fa-cog"></i><span>Настройки</span></a>
+            </div>
+        </aside>
+
+        <main class="main-area" id="mainArea">
+            <header class="top-bar">
+                <div class="top-bar-left"><span class="top-bar-title">Рабочее пространство</span></div>
+                <div class="top-bar-right" onclick="navigateTo('profile')" style="cursor:pointer;">
+                    <div class="top-user-avatar" id="topAvatar"></div>
+                    <div class="top-user-info">
+                        <span class="top-user-name" id="topName"></span>
+                        <span class="top-user-mail" id="topMail"></span>
+                    </div>
+                </div>
+            </header>
+
+            <section id="page-workspace" class="page-content active">
+                <div class="workspace-grid">
+                    <div class="workspace-left">
+                        <div class="section-title-row">
+                            <h2><i class="fas fa-file-alt"></i> Мои заметки</h2>
+                            <button class="btn btn-primary btn-sm" onclick="openNoteModal()"><i class="fas fa-plus"></i> Создать</button>
+                        </div>
+                        <div class="notes-list" id="notesList"></div>
+                    </div>
+                    <div class="workspace-right">
+                        <div class="calendar-widget">
+                            <div class="cal-header">
+                                <button class="btn-icon-sm" onclick="calPrev()"><i class="fas fa-chevron-left"></i></button>
+                                <span id="calMonthYear" class="cal-month-label">Май 2026</span>
+                                <button class="btn-icon-sm" onclick="calNext()"><i class="fas fa-chevron-right"></i></button>
+                            </div>
+                            <div class="cal-weekdays"><span>ПН</span><span>ВТ</span><span>СР</span><span>ЧТ</span><span>ПТ</span><span>СБ</span><span>ВС</span></div>
+                            <div class="cal-days" id="calDays"></div>
+                            <div class="cal-legend">
+                                <span><span class="legend-dot dot-default"></span> Есть заметка</span>
+                                <span><span class="legend-dot dot-deadline"></span> Есть дедлайн</span>
+                                <span><span class="legend-dot dot-important"></span> Важная</span>
+                            </div>
+                        </div>
+                        <div class="calendar-day-notes" id="calendarDayNotes">
+                            <h3>Заметки на <span id="calSelectedDate">выбранную дату</span></h3>
+                            <div id="calDayNotesList"></div>
+                            <button class="btn btn-primary btn-sm" onclick="addNoteForSelectedDay()" style="margin-top:10px;width:100%;"><i class="fas fa-plus"></i> Добавить</button>
+                        </div>
+                        <div class="week-plan">
+                            <div class="section-title-row"><h2><i class="fas fa-tasks"></i> Важные задачи</h2></div>
+                            <div id="weekPlanList"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="page-profile" class="page-content">
+                <div class="content-header"><h1><i class="fas fa-user-circle"></i> Личный кабинет</h1></div>
+                <div class="profile-layout">
+                    <div class="profile-card" id="profileCard">
+                        <div class="profile-edit-trigger" onclick="openEditProfile()"><i class="fas fa-pencil-alt"></i></div>
+                        <div class="profile-avatar-wrapper">
+                            <div class="profile-avatar" id="profAvatar"></div>
+                            <label class="profile-avatar-upload"><i class="fas fa-camera"></i><input type="file" accept="image/*" onchange="uploadAvatar(event)"></label>
+                        </div>
+                        <h2 class="profile-name" id="profName"></h2>
+                        <div class="profile-info">
+                            <div class="info-row"><span>Email</span><span id="profEmail"></span></div>
+                            <div class="info-row"><span>Телефон</span><span id="profPhone"></span></div>
+                            <div class="info-row"><span>Дата рождения</span><span id="profBirth"></span></div>
+                            <div class="info-row"><span>Город</span><span id="profCity"></span></div>
+                            <div class="info-row"><span>Должность</span><span id="profPosition"></span></div>
+                            <div class="info-row"><span>Команда</span><span id="profTeam"></span></div>
+                        </div>
+                    </div>
+                    <div class="profile-settings" id="profileSettings">
+                        <h2><i class="fas fa-cog"></i> Настройки аккаунта</h2>
+                        <div class="setting-row"><span id="langLabel">Язык интерфейса</span><select id="langSelect" onchange="applyLanguage()"><option value="ru">Русский</option><option value="en">English</option></select></div>
+                        <div class="setting-row"><span id="themeLabel">Тема оформления</span><select id="themeSelect" onchange="applyTheme()"><option value="dark">🌙 Тёмная</option><option value="light">☀️ Светлая</option></select></div>
+                        <div class="setting-row"><span id="notifLabel">Уведомления</span><label class="toggle"><input type="checkbox" id="notifToggle" checked><span class="toggle-slider"></span></label></div>
+                        <button class="btn btn-danger btn-sm" onclick="deleteAccount()"><i class="fas fa-trash"></i> <span id="delBtnLabel">Удалить аккаунт</span></button>
+                        <button class="btn btn-secondary btn-sm" onclick="logout()" style="margin-top:10px;"><i class="fas fa-sign-out-alt"></i> Выйти</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="page-contacts" class="page-content">
+                <div class="content-header">
+                    <h1><i class="fas fa-address-book"></i> Контакты</h1>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <span class="contacts-count" id="contactsCount">Все контакты (0)</span>
+                        <button class="btn btn-primary btn-sm" onclick="openNewContact()"><i class="fas fa-plus"></i> Добавить контакт</button>
+                    </div>
+                </div>
+                <div class="contacts-list" id="contactsList"></div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- ==================== МОДАЛЬНЫЕ ОКНА ==================== -->
+
+    <div class="modal-overlay" id="modalEditProfile">
+        <div class="modal">
+            <div class="modal-header"><h2>Редактирование профиля</h2><button class="modal-close" onclick="closeModal('modalEditProfile')">&times;</button></div>
+            <div class="modal-body">
+                <form id="editProfileForm">
+                    <div class="form-group"><label>Имя</label><input type="text" id="epName" placeholder="Имя..."></div>
+                    <div class="form-group"><label>Почта</label><input type="email" id="epEmail" placeholder="Почта..."></div>
+                    <div class="form-group"><label>Телефон</label><input type="text" id="epPhone" placeholder="Телефон..."></div>
+                    <div class="form-group"><label>Дата рождения</label><input type="date" id="epBirth"></div>
+                    <div class="form-group"><label>Должность</label><input type="text" id="epPosition" placeholder="Должность..."></div>
+                    <div class="form-group"><label>Город</label><input type="text" id="epCity" placeholder="Город..."></div>
+                    <div class="form-group"><label>Команда</label><input type="text" id="epTeam" placeholder="Команда..."></div>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="deleteAccount()" style="margin-bottom:15px;"><i class="fas fa-trash"></i> Удалить аккаунт</button>
+                </form>
+            </div>
+            <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('modalEditProfile')">Отмена</button><button class="btn btn-primary" onclick="saveProfile()">Изменить</button></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalNewContact">
+        <div class="modal">
+            <div class="modal-header"><h2>Новый контакт</h2><button class="modal-close" onclick="closeModal('modalNewContact')">&times;</button></div>
+            <div class="modal-body">
+                <form id="newContactForm">
+                    <div class="form-group"><label>Имя...</label><input type="text" id="ncName" placeholder="Имя..."></div>
+                    <div class="form-group"><label>Должность...</label><input type="text" id="ncPos" placeholder="Должность..."></div>
+                    <div class="form-group"><label>Почта...</label><input type="email" id="ncEmail" placeholder="Почта..."></div>
+                    <div class="form-group"><label>Телефон...</label><input type="text" id="ncPhone" placeholder="Телефон..."></div>
+                </form>
+            </div>
+            <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('modalNewContact')">Отмена</button><button class="btn btn-primary" onclick="saveNewContact()">Добавить</button></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalChat">
+        <div class="modal modal-chat">
+            <div class="modal-header"><h2>Чат — <span id="chatName">Мария Соколова</span></h2><button class="modal-close" onclick="closeModal('modalChat')">&times;</button></div>
+            <div class="modal-body chat-body" id="chatBody">
+                <div class="msg msg-in"><span class="msg-author">Мария Соколова</span>Привет!</div>
+                <div class="msg msg-out"><span class="msg-author">Вы</span>Как дела?</div>
+                <div class="msg msg-in"><span class="msg-author">Мария Соколова</span>Нормис, у тебя как?</div>
+            </div>
+            <div class="chat-input-row"><input type="text" id="chatInput" placeholder="Написать сообщение..." onkeydown="if(event.key==='Enter') sendChatMsg()"><button class="btn btn-primary btn-sm" onclick="sendChatMsg()"><i class="fas fa-paper-plane"></i></button></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalCall">
+        <div class="modal-call">
+            <div class="call-content">
+                <div class="call-icon"><i class="fas fa-phone-alt"></i></div>
+                <h2 id="callName">Мария Соколова</h2><p>ЗВОНОК</p>
+                <button class="btn btn-danger btn-call-end" onclick="closeModal('modalCall')"><i class="fas fa-phone-slash"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalVideo">
+        <div class="modal-call">
+            <div class="call-content">
+                <div class="video-placeholders">
+                    <div class="video-box video-small">Иванов Иван</div>
+                    <div class="video-box video-large"><span id="videoName">Мария Соколова</span></div>
+                </div>
+                <button class="btn btn-danger btn-call-end" onclick="closeModal('modalVideo')"><i class="fas fa-phone-slash"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modalNote">
+        <div class="modal">
+            <div class="modal-header"><h2 id="noteModalTitle">Редактировать заметку</h2><button class="modal-close" onclick="closeModal('modalNote')">&times;</button></div>
+            <div class="modal-body">
+                <form id="noteForm">
+                    <div class="form-group"><label>Заголовок заметки...</label><input type="text" id="noteTitle" placeholder="Заголовок заметки..."></div>
+                    <div class="form-group"><label>Описание заметки...</label><textarea id="noteDesc" rows="4" placeholder="Описание заметки..."></textarea></div>
+                    <div class="form-row-duo">
+                        <div class="form-group"><label>Дата создания</label><input type="date" id="noteDate"></div>
+                        <div class="form-group"><label>Дата дедлайна</label><input type="date" id="noteDeadline"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Важность</label>
+                        <select id="notePriority">
+                            <option value="low">🟢 Низкая</option><option value="medium" selected>🟡 Средняя</option>
+                            <option value="high">🔴 Высокая</option><option value="critical">🔥 Критичная</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('modalNote')">Отмена</button><button class="btn btn-primary" onclick="saveNote()"><i class="fas fa-save"></i> Сохранить</button></div>
+        </div>
+    </div>
+
+    <div id="toastContainer"></div>
+</div>
+
+<!-- EmailJS SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
