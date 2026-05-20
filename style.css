@@ -586,6 +586,75 @@ body.light-theme .wp-task-item { background: #F9FAFB; }
 body.light-theme .toggle-slider { background: #D1D5DB; }
 body.light-theme .note-card-date { color: #9CA3AF; }
 
+/* ========== ЧЕКБОКС ДЛЯ ЗАДАЧ ========== */
+.note-checkbox {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    position: relative;
+    padding-left: 28px;
+    min-height: 20px;
+    margin-right: 4px;
+}
+.note-checkbox input {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+    height: 0;
+    width: 0;
+}
+.checkmark {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: transparent;
+    transition: all 0.2s ease;
+}
+.note-checkbox:hover input ~ .checkmark {
+    border-color: var(--primary);
+    background: rgba(59,130,246,0.1);
+}
+.note-checkbox input:checked ~ .checkmark {
+    background: #10B981;
+    border-color: #10B981;
+}
+.checkmark:after {
+    content: '';
+    position: absolute;
+    display: none;
+    left: 5px;
+    top: 2px;
+    width: 4px;
+    height: 8px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+.note-checkbox input:checked ~ .checkmark:after {
+    display: block;
+}
+.note-card.note-completed {
+    opacity: 0.6;
+    border-color: rgba(16,185,129,0.3);
+}
+.note-card.note-completed:hover {
+    border-color: rgba(16,185,129,0.6);
+}
+.text-strikethrough {
+    text-decoration: line-through;
+    color: var(--text-secondary) !important;
+}
+.completed-badge {
+    font-size: 10px;
+    color: #10B981;
+    font-weight: 600;
+}
+
 /* ============================================================
    AVATAR UPLOAD
    ============================================================ */

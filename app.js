@@ -1,11 +1,8 @@
 // ============================================================
 //  Vein's — Full Application Logic (SPA)
-//  All data stored in localStorage
-//  EmailJS integration for sending verification codes
 //  + VK Bot sync + Ollama AI chat widget
 // ============================================================
 
-// ===================== EMAILJS CONFIG =====================
 const EMAILJS_CONFIG = {
     publicKey: 'K40OdfIbGQ0Qp0_Q1',
     serviceID: 'service_k1uzenn',
@@ -13,8 +10,9 @@ const EMAILJS_CONFIG = {
     useEmailJS: true
 };
 
-// ===================== SERVER CONFIG =====================
-const API_BASE = window.location.origin;
+// Всегда используем localhost:3000 для API
+const API_BASE = 'http://localhost:3000';
+const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
 
 // ===================== DATA LAYER =====================
 const DB = {
@@ -56,15 +54,75 @@ const DB = {
 async function syncNotesToServer(email, notes) {
     try {
         for (const note of notes) {
+            if (note._synced) continue;
             const response = await fetch(`${API_BASE}/api/notes`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, title: note.title || '', content: note.content || '', date: note.date, deadline: note.deadline || '', priority: note.priority || 'medium', tags: note.tags || [] })
             });
-            if (!response.ok) console.warn('⚠️ Ошибка синхронизации заметки:', note.title);
+            const data = await response.json();
+            if (data.success) {
+                note._synced = true;
+            }
+        }
+        saveNotesArr(notes);
+    } catch (e) {
+        console.log('ℹ️ Сервер недоступен для синхронизации');
+    }
+}
+
+// ===================== УВЕДОМЛЕНИЕ В VK =====================
+let vkNotificationsEnabled = true;
+
+function toggleVkNotifications() {
+    vkNotificationsEnabled = document.getElementById('notifToggle').checked;
+    localStorage.setItem('veins_vk_notifications', vkNotificationsEnabled ? '1' : '0');
+    const msg = vkNotificationsEnabled ? '🔔 Уведомления в VK включены' : '🔕 Уведомления в VK выключены';
+    showToast(msg, 2000);
+}
+
+function loadVkNotificationSetting() {
+    const saved = localStorage.getItem('veins_vk_notifications');
+    if (saved === '0') {
+        vkNotificationsEnabled = false;
+        const toggle = document.getElementById('notifToggle');
+        if (toggle) toggle.checked = false;
+    } else {
+        vkNotificationsEnabled = true;
+        const toggle = document.getElementById('notifToggle');
+        if (toggle) toggle.checked = true;
+    }
+}
+
+async function notifyVKFromSite(vkId, note) {
+    if (!vkId || !vkNotificationsEnabled) return;
+    try {
+        console.log('📨 Отправка уведомления в VK для ID', vkId, 'заметка:', note.title);
+        const response = await fetch(`${API_BASE}/api/notify-vk`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                vk_id: vkId, 
+                note: { 
+                    title: note.title || 'Заметка', 
+                    deadline: note.deadline || '', 
+                    date: note.date || getTodayStr(), 
+                    priority: note.priority || 'medium', 
+                    description: note.content || '' 
+                }, 
+                action: 'created' 
+            })
+        });
+        const data = await response.json();
+        if (data.success) {
+            console.log('✅ Уведомление отправлено в VK:', data.response);
+        } else if (data.error === 'user_not_initiated') {
+            showToast('💬 Напишите боту в VK: vk.me/club238851353', 'info');
+        } else {
+            console.log('⚠️ VK ответил:', data);
         }
     } catch (e) {
-        console.log('ℹ️ Сервер недоступен для синхронизации (локальный режим)');
+        console.log('VK notify error:', e.message);
     }
 }
 
@@ -85,52 +143,37 @@ function getInitials(name) {
     if (!name) return '??';
     return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
-
-function generateId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
-}
-
-function generateCode() {
-    return String(Math.floor(100000 + Math.random() * 900000));
-}
-
+function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 6); }
+function generateCode() { return String(Math.floor(100000 + Math.random() * 900000)); }
 function formatDateDisplay(d) {
     if (!d) return '';
     const date = new Date(d + 'T00:00:00');
     return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`;
 }
-
 function getTodayStr() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
-
 function getCurrentLang() {
     return document.getElementById('langSelect')?.value || (currentUser ? DB.get('veins_lang_' + currentUser.email, 'ru') : 'ru');
 }
-
 function tr(key) {
     const lang = getCurrentLang();
     const t = translations[lang] || translations.ru;
     return t[key] !== undefined ? t[key] : key;
 }
-
 function getPriorityLabel(p) {
     const lang = getCurrentLang();
     const t = translations[lang] || translations.ru;
     return t.priorityLabels[p] || t.medium;
 }
-
-function getPriorityClass(p) {
-    return 'priority-' + (p || 'medium');
-}
+function getPriorityClass(p) { return 'priority-' + (p || 'medium'); }
 
 // ===================== PAGE NAV =====================
 function showPage(pageId) {
@@ -138,7 +181,6 @@ function showPage(pageId) {
     const page = document.getElementById(pageId);
     if (page) page.classList.add('active');
 }
-
 function showAuthPage(page) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.getElementById('page-' + page).classList.add('active');
@@ -213,7 +255,6 @@ document.getElementById('resetForm').addEventListener('submit', function(e) {
     }
 });
 
-// ===================== SEND VERIFICATION CODE =====================
 function sendVerificationCode(email) {
     const code = generateCode();
     pendingVerificationEmail = email;
@@ -235,7 +276,6 @@ function sendVerificationCode(email) {
     if (firstInput) firstInput.focus();
 }
 
-// ===================== VERIFY CODE =====================
 function verifyCode() {
     const inputs = document.querySelectorAll('.code-digit');
     const code = Array.from(inputs).map(i => i.value).join('');
@@ -268,7 +308,6 @@ function resendCode() {
     showToast('Код отправлен снова!', 'success');
 }
 
-// ===================== LOGOUT =====================
 function logout() {
     if (!confirm('Вы уверены, что хотите выйти?')) return;
     currentUser = null;
@@ -280,7 +319,6 @@ function logout() {
     if (panel) panel.classList.remove('open');
 }
 
-// ===================== TOAST =====================
 function showToast(message, type = 'info') {
     const container = document.getElementById('toastContainer');
     if (!container) return;
@@ -291,7 +329,6 @@ function showToast(message, type = 'info') {
     setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateX(100px)'; toast.style.transition = '0.3s ease'; setTimeout(() => toast.remove(), 300); }, 3000);
 }
 
-// ===================== CODE INPUTS INIT =====================
 document.querySelectorAll('.code-digit').forEach((input, idx, inputs) => {
     input.addEventListener('input', function() {
         if (this.value && idx < inputs.length - 1) inputs[idx + 1].focus();
@@ -302,16 +339,6 @@ document.querySelectorAll('.code-digit').forEach((input, idx, inputs) => {
         if (e.key === 'Backspace' && !this.value && idx > 0) inputs[idx - 1].focus();
     });
 });
-
-// ===================== VK OAuth LOGIN =====================
-async function loginWithVK() {
-    try {
-        const response = await fetch(`${API_BASE}/api/vk-oauth-url`);
-        const data = await response.json();
-        if (data.url) { window.location.href = data.url; }
-        else { showToast('⚠️ Ошибка получения ссылки VK', 'error'); }
-    } catch (e) { showToast('⚠️ Сервер недоступен', 'error'); }
-}
 
 function handleVkAuthCallback() {
     const params = new URLSearchParams(window.location.search);
@@ -347,18 +374,29 @@ function initApp() {
     loadTheme();
     loadLanguage();
     loadAvatar();
-    initDemoData();
     selectedCalDate = getTodayStr();
     renderAll();
     navigateTo('workspace');
     document.getElementById('chatWidgetBtn').style.display = 'flex';
+    
+    // Загрузка настройки уведомлений VK
+    loadVkNotificationSetting();
+    
+    // Синхронизация и проверка VK
     setTimeout(() => {
         const notes = getNotes();
         if (notes.length > 0) syncNotesToServer(currentUser.email, notes);
     }, 2000);
+    
+    const vkId = DB.get('veins_vk_id_' + currentUser.email, '');
+    if (vkId) {
+        showToast(`✅ VK ID привязан: ${vkId}. Уведомления будут приходить в VK!`, 'success');
+    } else {
+        setTimeout(() => {
+            showToast('💡 В настройках профиля привяжите VK ID для уведомлений в VK', 'info');
+        }, 4000);
+    }
 }
-
-function initDemoData() {}
 
 function updateTopBar() {
     const name = currentUser.name || '';
@@ -387,7 +425,6 @@ function applyTheme() {
     document.body.classList.toggle('light-theme', theme === 'light');
     DB.set('veins_theme_' + currentUser.email, theme);
 }
-
 function loadTheme() {
     const theme = DB.get('veins_theme_' + currentUser.email, 'dark');
     document.getElementById('themeSelect').value = theme;
@@ -475,6 +512,8 @@ function updateProfileDisplay() {
     document.getElementById('profPosition').textContent = position;
     document.getElementById('profTeam').textContent = team;
     document.getElementById('profVkId').textContent = vkId || 'Не привязан';
+    const btnUnlink = document.getElementById('btnUnlinkVk');
+    if (btnUnlink) btnUnlink.style.display = vkId ? 'inline-flex' : 'none';
     loadAvatar();
     updateTopBar();
 }
@@ -520,16 +559,39 @@ async function linkVkAccount() {
     if (!vkId) { showToast('Введите ваш VK ID (число)', 'error'); return; }
     if (!/^\d+$/.test(vkId)) { showToast('VK ID должен быть числом', 'error'); return; }
     DB.set('veins_vk_id_' + currentUser.email, vkId);
+    
+    // Пробуем отправить тестовое уведомление
     try {
-        const response = await fetch(`${API_BASE}/api/link-vk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: currentUser.email, vk_id: vkId }) });
+        const response = await fetch(`${API_BASE}/api/link-vk`, { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ email: currentUser.email, vk_id: vkId }) 
+        });
         if (response.ok) {
             showToast('✅ VK ID привязан!', 'success');
-            showToast('💬 Чтобы получать уведомления, напишите боту:\nhttps://vk.me/club238851353\n\nПосле этого все уведомления будут приходить в VK!', 'info');
         }
-        else showToast('⚠️ VK ID сохранён локально (сервер недоступен)', 'info');
-    } catch (e) { showToast('⚠️ VK ID сохранён локально (сервер недоступен)', 'info'); }
+    } catch (e) { 
+        console.log('link-vk error:', e.message);
+    }
+    
+    // Отправляем тестовое уведомление
+    const testNote = { title: 'Vein\'s Notes — VK подключён!', deadline: '', date: getTodayStr(), priority: 'medium', content: 'Теперь все новые заметки будут приходить сюда.' };
+    const sent = await notifyVKFromSite(vkId, testNote);
+    
+    showToast('💬 Напишите боту "привет" в VK: vk.me/club238851353', 'info', 6000);
     updateProfileDisplay();
     document.getElementById('vkLinkInput').value = '';
+    const btnUnlink = document.getElementById('btnUnlinkVk');
+    if (btnUnlink) btnUnlink.style.display = 'inline-flex';
+}
+
+function unlinkVkAccount() {
+    if (!confirm('Отвязать VK ID? Уведомления в VK перестанут приходить.')) return;
+    DB.remove('veins_vk_id_' + currentUser.email);
+    showToast('VK ID отвязан', 'success');
+    updateProfileDisplay();
+    const btnUnlink = document.getElementById('btnUnlinkVk');
+    if (btnUnlink) btnUnlink.style.display = 'none';
 }
 
 // ===================== NOTES =====================
@@ -539,14 +601,105 @@ function saveNotesArr(notes) { DB.saveNotes(currentUser.email, notes); }
 function renderNotes() {
     const container = document.getElementById('notesList');
     const notes = getNotes();
-    if (notes.length === 0) { container.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text-secondary);font-size:14px;">${tr('noNotes')}</div>`; return; }
+    // Показываем только НЕвыполненные заметки
+    const activeNotes = notes.filter(n => !n._completed);
+    const completedCount = notes.filter(n => n._completed).length;
+    
+    if (activeNotes.length === 0 && completedCount === 0) {
+        container.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text-secondary);font-size:14px;">${tr('noNotes')}</div>`;
+        return;
+    }
     const today = getTodayStr();
-    container.innerHTML = notes.slice().reverse().map(n => {
+    container.innerHTML = activeNotes.slice().reverse().map(n => {
         const isOverdue = n.deadline && n.deadline < today;
         const noTitle = tr('noTitle');
         const deadlineLabel = tr('deadlineLabel');
-        return `<div class="note-card"><div class="note-card-header"><div class="note-card-title">${escapeHtml(n.title) || noTitle}</div><div class="note-card-actions"><button class="btn-edit-note" onclick="editNote('${n.id}')"><i class="fas fa-pen"></i></button><button class="btn-del-note" onclick="deleteNote('${n.id}')"><i class="fas fa-trash"></i></button></div></div><div class="note-card-meta"><span class="note-card-date"><i class="far fa-calendar-alt"></i> ${formatDateDisplay(n.date)}</span><span class="note-priority-badge ${getPriorityClass(n.priority)}">${getPriorityLabel(n.priority)}</span>${n.deadline ? `<span class="${isOverdue ? 'note-deadline overdue' : 'note-deadline'}"><i class="far fa-hourglass"></i> ${deadlineLabel}: ${formatDateDisplay(n.deadline)}${isOverdue ? ' ⚠️' : ''}</span>` : ''}</div>${n.tags && n.tags.length ? `<div class="note-card-tags">${n.tags.map(t => `<span class="note-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}</div>`;
+        const completedClass = n._completed ? ' note-completed' : '';
+        const checkedAttr = n._completed ? 'checked' : '';
+        return `<div class="note-card${completedClass}">
+            <div class="note-card-header">
+                <label class="note-checkbox" onclick="event.stopPropagation()">
+                    <input type="checkbox" ${checkedAttr} onchange="toggleCompleteNote('${n.id}')">
+                    <span class="checkmark"></span>
+                </label>
+                <div class="note-card-title${n._completed ? ' text-strikethrough' : ''}">${escapeHtml(n.title) || noTitle}</div>
+                <div class="note-card-actions">
+                    <button class="btn-edit-note" onclick="editNote('${n.id}')"><i class="fas fa-pen"></i></button>
+                    <button class="btn-del-note" onclick="deleteNote('${n.id}')"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+            <div class="note-card-meta">
+                <span class="note-card-date"><i class="far fa-calendar-alt"></i> ${formatDateDisplay(n.date)}</span>
+                <span class="note-priority-badge ${getPriorityClass(n.priority)}">${getPriorityLabel(n.priority)}</span>
+                ${n.deadline ? `<span class="${isOverdue ? 'note-deadline overdue' : 'note-deadline'}"><i class="far fa-hourglass"></i> ${deadlineLabel}: ${formatDateDisplay(n.deadline)}${isOverdue ? ' ⚠️' : ''}</span>` : ''}
+            </div>
+            ${n.tags && n.tags.length ? `<div class="note-card-tags">${n.tags.map(t => `<span class="note-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+        </div>`;
     }).join('');
+    
+    // Кнопка просмотра архива, если есть выполненные
+    if (completedCount > 0) {
+        container.innerHTML += `
+            <div style="text-align:center;padding:12px;margin-top:4px;">
+                <button class="btn btn-secondary btn-sm" onclick="showArchive()" style="width:100%;justify-content:center;opacity:0.7;">
+                    📦 Архив выполненных (${completedCount})
+                </button>
+            </div>
+        `;
+    }
+}
+
+// ===================== АРХИВ ВЫПОЛНЕННЫХ =====================
+function showArchive() {
+    const notes = getNotes();
+    const completed = notes.filter(n => n._completed).reverse();
+    const container = document.getElementById('notesList');
+    
+    if (completed.length === 0) {
+        container.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--text-secondary);font-size:14px;">Архив пуст</div>`;
+        return;
+    }
+    
+    container.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding:8px 4px;">
+            <span style="font-size:13px;color:var(--text-secondary);">📦 Архив выполненных задач (${completed.length})</span>
+            <button class="btn btn-secondary btn-sm" onclick="renderNotes()" style="padding:4px 12px;font-size:11px;">
+                ← Назад к заметкам
+            </button>
+        </div>
+        ${completed.map(n => {
+            const today = getTodayStr();
+            const isOverdue = n.deadline && n.deadline < today;
+            const deadlineLabel = tr('deadlineLabel');
+            return `<div class="note-card note-completed" style="opacity:0.5;">
+                <div class="note-card-header">
+                    <div class="note-card-title text-strikethrough">${escapeHtml(n.title) || 'Без названия'}</div>
+                    <div class="note-card-actions">
+                        <button class="btn-del-note" onclick="restoreNote('${n.id}')" title="Восстановить"><i class="fas fa-undo"></i></button>
+                        <button class="btn-del-note" onclick="deleteNote('${n.id}')"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>
+                <div class="note-card-meta">
+                    <span class="note-card-date"><i class="far fa-calendar-alt"></i> ${formatDateDisplay(n.date)}</span>
+                    ${n.deadline ? `<span class="${isOverdue ? 'note-deadline overdue' : 'note-deadline'}">${deadlineLabel}: ${formatDateDisplay(n.deadline)}</span>` : ''}
+                    <span class="completed-badge">✅ Выполнено</span>
+                </div>
+            </div>`;
+        }).join('')}
+    `;
+}
+
+function restoreNote(id) {
+    let notes = getNotes();
+    const note = notes.find(n => n.id === id);
+    if (!note) return;
+    note._completed = false;
+    saveNotesArr(notes);
+    renderNotes();
+    renderCalendar();
+    renderSelectedDayNotes();
+    renderImportantTasks();
+    showToast(`🔄 Задача "${note.title}" восстановлена`, 'success');
 }
 
 function openNoteModal(noteId = null) {
@@ -573,7 +726,7 @@ function openNoteModal(noteId = null) {
 
 function editNote(id) { openNoteModal(id); }
 
-function saveNote() {
+async function saveNote() {
     const title = document.getElementById('noteTitle').value.trim();
     const content = document.getElementById('noteDesc').value.trim();
     const noteDate = document.getElementById('noteDate').value || getTodayStr();
@@ -581,18 +734,67 @@ function saveNote() {
     const priority = document.getElementById('notePriority').value;
     if (!title && !content) { alert('Заголовок или описание должны быть заполнены'); return; }
     let notes = getNotes();
+    
     if (editingNoteId) {
         const idx = notes.findIndex(n => n.id === editingNoteId);
-        if (idx !== -1) notes[idx] = { ...notes[idx], title, content, date: noteDate, deadline, priority };
+        if (idx !== -1) { notes[idx] = { ...notes[idx], title, content, date: noteDate, deadline, priority }; }
     } else {
-        notes.push({ id: generateId(), title, content, tags: ['#заметка'], date: noteDate, deadline, priority });
+        const newNote = { id: generateId(), title, content, tags: ['#заметка'], date: noteDate, deadline, priority };
+        notes.push(newNote);
+        
+        // ОТПРАВЛЯЕМ УВЕДОМЛЕНИЕ В VK
+        const vkId = DB.get('veins_vk_id_' + currentUser.email, '');
+        if (vkId) {
+            console.log('📨 Отправка уведомления в VK о новой заметке...');
+            await notifyVKFromSite(vkId, { title, deadline, date: noteDate, priority, content });
+        }
     }
+    
     saveNotesArr(notes);
     closeModal('modalNote');
     renderNotes();
     renderCalendar();
     renderSelectedDayNotes();
     renderImportantTasks();
+}
+
+// ===================== ОТМЕТКА ВЫПОЛНЕНИЯ =====================
+async function toggleCompleteNote(id) {
+    let notes = getNotes();
+    const note = notes.find(n => n.id === id);
+    if (!note) return;
+    
+    note._completed = !note._completed;
+    saveNotesArr(notes);
+    renderNotes();
+    renderCalendar();
+    renderSelectedDayNotes();
+    renderImportantTasks();
+    
+    if (note._completed) {
+        showToast(`✅ Задача "${note.title}" выполнена!`, 'success');
+        // Уведомление в VK
+        const vkId = DB.get('veins_vk_id_' + currentUser.email, '');
+        if (vkId && vkNotificationsEnabled) {
+            try {
+                const response = await fetch(`${API_BASE}/api/notify-vk`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        vk_id: vkId, 
+                        note: { title: note.title, deadline: note.deadline, date: note.date, priority: note.priority, description: '✅ Задача выполнена!' }, 
+                        action: 'completed' 
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    console.log('✅ Уведомление о выполнении отправлено в VK');
+                }
+            } catch (e) {
+                console.log('VK notify error:', e.message);
+            }
+        }
+    }
 }
 
 function deleteNote(id) {
@@ -624,7 +826,7 @@ function renderCalendar() {
     const rem = Math.ceil(total / 7) * 7 - total;
     const nextDays = Array.from({length: rem}, (_, i) => i + 1);
     const todayStr = getTodayStr();
-    const notes = getNotes();
+    const notes = getNotes().filter(n => !n._completed);
     const dateInfo = {};
     notes.forEach(n => {
         if (n.date) { if (!dateInfo[n.date]) dateInfo[n.date] = { hasNote: false, hasDeadline: false, hasImportant: false }; dateInfo[n.date].hasNote = true; }
@@ -664,7 +866,7 @@ function renderSelectedDayNotes() {
     if (!selectedCalDate) selectedCalDate = getTodayStr();
     dateSpan.textContent = formatDateDisplay(selectedCalDate);
     const allNotes = getNotes();
-    const notes = allNotes.filter(n => n.date === selectedCalDate || n.deadline === selectedCalDate);
+    const notes = allNotes.filter(n => (n.date === selectedCalDate || n.deadline === selectedCalDate) && !n._completed);
     if (notes.length === 0) { container.innerHTML = '<div class="cal-day-empty">Нет заметок на этот день</div>'; return; }
     const today = getTodayStr();
     container.innerHTML = notes.map(n => {
@@ -684,12 +886,11 @@ function addNoteForSelectedDay() {
     openNoteModal();
 }
 
-// ===================== IMPORTANT TASKS =====================
 function renderImportantTasks() {
     const container = document.getElementById('weekPlanList');
     const notes = getNotes();
     const today = getTodayStr();
-    const important = notes.filter(n => n.priority === 'high' || n.priority === 'critical').sort((a, b) => { const order = { critical: 0, high: 1 }; return (order[a.priority] || 2) - (order[b.priority] || 2); });
+    const important = notes.filter(n => !n._completed && (n.priority === 'high' || n.priority === 'critical')).sort((a, b) => { const order = { critical: 0, high: 1 }; return (order[a.priority] || 2) - (order[b.priority] || 2); });
     if (important.length === 0) { container.innerHTML = '<div class="wp-empty">Нет важных задач</div>'; return; }
     container.innerHTML = important.map(n => {
         const isOverdue = n.deadline && n.deadline < today;
@@ -710,7 +911,6 @@ function renderContacts() {
 }
 
 function openNewContact() { ['ncName','ncPos','ncEmail','ncPhone'].forEach(id => document.getElementById(id).value = ''); openModal('modalNewContact'); }
-
 function saveNewContact() {
     const name = document.getElementById('ncName').value.trim();
     const role = document.getElementById('ncPos').value.trim();
@@ -723,7 +923,6 @@ function saveNewContact() {
     closeModal('modalNewContact');
     renderContacts();
 }
-
 function deleteContact(id) {
     if (!confirm('Удалить контакт?')) return;
     let contacts = DB.getContacts(currentUser.email);
@@ -731,7 +930,6 @@ function deleteContact(id) {
     DB.saveContacts(currentUser.email, contacts);
     renderContacts();
 }
-
 function openChat(contactId) {
     const contacts = DB.getContacts(currentUser.email);
     const c = contacts.find(ct => ct.id === contactId);
@@ -742,7 +940,6 @@ function openChat(contactId) {
     document.getElementById('chatInput').value = '';
     openModal('modalChat');
 }
-
 function sendChatMsg() {
     const input = document.getElementById('chatInput');
     const text = input.value.trim();
@@ -752,7 +949,6 @@ function sendChatMsg() {
     input.value = '';
     body.scrollTop = body.scrollHeight;
 }
-
 function openCall(contactId) {
     const contacts = DB.getContacts(currentUser.email);
     const c = contacts.find(ct => ct.id === contactId);
@@ -760,7 +956,6 @@ function openCall(contactId) {
     document.getElementById('callName').textContent = c.name;
     openModal('modalCall');
 }
-
 function openVideo(contactId) {
     const contacts = DB.getContacts(currentUser.email);
     const c = contacts.find(ct => ct.id === contactId);
@@ -777,8 +972,8 @@ document.addEventListener('keydown', function(e) { if (e.key === 'Escape') { doc
 
 // ===================== OLLAMA ЧАТ-ВИДЖЕТ =====================
 
-let cwHistory = [];
 let cwIsLoading = false;
+let cwInitialized = false;
 
 function toggleChatWidget() {
     const panel = document.getElementById('chatWidgetPanel');
@@ -789,39 +984,47 @@ function toggleChatWidget() {
     } else {
         panel.classList.add('open');
         btn.style.display = 'none';
-        checkOllamaStatus();
+        if (!cwInitialized) {
+            cwInitialized = true;
+            checkOllamaStatus();
+        }
         document.getElementById('cwInput').focus();
     }
 }
 
 async function checkOllamaStatus() {
     const statusDot = document.getElementById('cwStatus');
+    const msgContainer = document.getElementById('cwMessages');
+    
     if (!currentUser) {
         statusDot.classList.add('offline');
-        addCwMessage('ai', '👋 Привет! Я ИИ-ассистент.\n\n🔑 Чтобы начать работу, нужно войти в аккаунт.\n\nНажми кнопку "Войти через VK" ниже 👇');
-        document.querySelector('.cw-suggestions').innerHTML = `
-            <button onclick="loginWithVK()" style="width:100%;padding:12px;background:#4A76A8;color:white;border:none;border-radius:10px;font-size:14px;cursor:pointer;font-family:var(--font);display:flex;align-items:center;justify-content:center;gap:8px;font-weight:600;">
-                🔵 Войти через VK
-            </button>
-            <button onclick="showAuthPage('login');toggleChatWidget()" style="flex:1;background:var(--primary);color:white;border:none;border-radius:8px;padding:8px;font-size:12px;cursor:pointer;font-family:var(--font);">
-                📧 Войти по email
-            </button>
-        `;
+        addCwMessage('ai', '🔑 Войдите в аккаунт, чтобы пользоваться ИИ-ассистентом');
         return;
     }
+
+    // Приветственное сообщение
+    const vkId = DB.get('veins_vk_id_' + currentUser.email, '');
+    addCwMessage('ai', 
+        `👋 *Привет, ${currentUser.name || 'друг'}!*\n\n` +
+        `📝 *Что я умею:*\n` +
+        `• "создай заметку [текст]" — новая заметка\n` +
+        `• "мои заметки" — список\n` +
+        `• "дедлайны" — сроки\n` +
+        `• Любой вопрос — отвечу через ИИ\n\n` +
+        `${vkId ? '✅ VK привязан! Уведомления будут приходить.' : '💡 Привяжите VK ID в настройках профиля для уведомлений'}`
+    );
+
+    // Проверяем Ollama
     try {
         const response = await fetch(`${API_BASE}/api/ollama`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: 'test' }) });
         const data = await response.json();
         if (data.success) {
             statusDot.classList.remove('offline');
-            addCwMessage('ai', '🤖 ИИ-ассистент подключён и готов к работе!');
         } else {
             statusDot.classList.add('offline');
-            addCwMessage('ai', '⚠️ Ollama не запущена. Напишите "ollama serve" в терминале.\n\nℹ️ Бот будет отвечать без ИИ.');
         }
     } catch (e) {
         statusDot.classList.add('offline');
-        addCwMessage('ai', '⚠️ Сервер Ollama недоступен.\nℹ️ Бот будет работать в офлайн-режиме.');
     }
 }
 
@@ -829,7 +1032,8 @@ function addCwMessage(role, text) {
     const container = document.getElementById('cwMessages');
     const div = document.createElement('div');
     div.className = `cw-message ${role}`;
-    div.textContent = text;
+    // Простой текст (не markdown)
+    div.textContent = text.replace(/\*/g, '').replace(/#/g, '');
     const meta = document.createElement('div');
     meta.className = 'cw-meta';
     meta.textContent = role === 'ai' ? '🤖 Vein\'s AI' : 'Вы';
@@ -862,16 +1066,16 @@ function sendSuggestedMessage(text) {
 async function sendChatWidgetMessage() {
     const input = document.getElementById('cwInput');
     const text = input.value.trim();
-    if (!text || cwIsLoading) return;
+    if (!text || cwIsLoading || !currentUser) return;
 
     input.value = '';
     cwIsLoading = true;
     document.getElementById('cwSendBtn').disabled = true;
 
     addCwMessage('user', text);
-
     const lower = text.toLowerCase();
 
+    // Создание заметки
     if (lower.includes('создай заметку') || lower.includes('создать заметку') || lower.includes('новая заметка') || lower.includes('запиши')) {
         let title = text.replace(/созда(й|ть)\s*заметку/i, '').replace(/новая\s*заметка/i, '').replace(/запиши/i, '').trim();
         if (!title) title = 'Заметка от ИИ';
@@ -888,89 +1092,118 @@ async function sendChatWidgetMessage() {
         notes.push(note);
         saveNotesArr(notes);
         renderNotes(); renderCalendar(); renderSelectedDayNotes(); renderImportantTasks();
+        
+        // Уведомление в VK
+        const vkId = DB.get('veins_vk_id_' + currentUser.email, '');
+        if (vkId) await notifyVKFromSite(vkId, note);
+        
         let reply = `✅ Заметка создана!\n\n📌 ${title}`;
         if (deadline) reply += `\n⏰ Дедлайн: ${deadline}`;
+        if (vkId) reply += `\n\n📨 Уведомление отправлено в VK!`;
         addCwMessage('ai', reply);
-        cwIsLoading = false;
-        document.getElementById('cwSendBtn').disabled = false;
+        cwIsLoading = false; document.getElementById('cwSendBtn').disabled = false;
         return;
     }
 
+    // Список заметок
     if (lower === 'мои заметки' || lower === 'заметки' || lower === 'список' || lower === 'notes') {
         const notes = getNotes();
-        if (notes.length === 0) { addCwMessage('ai', '📭 У вас пока нет заметок. Напишите "создай заметку [название]"'); }
-        else {
-            let msg = `📋 *Ваши заметки (${notes.length}):*\n\n`;
+        if (notes.length === 0) {
+            addCwMessage('ai', '📭 У вас пока нет заметок. Напишите "создай заметку [название]"');
+        } else {
+            let msg = `📋 Ваши заметки (${notes.length}):\n\n`;
             notes.slice(-5).reverse().forEach((n, i) => {
                 const emoji = { low: '🟢', medium: '🟡', high: '🔴', critical: '🔥' };
                 msg += `${emoji[n.priority] || '📝'} ${n.title.substring(0, 50)}`;
                 if (n.deadline) msg += ` (⏰ ${n.deadline})`;
                 msg += '\n';
             });
-            if (notes.length > 5) msg += `\n📌 Показаны 5 последних из ${notes.length}`;
+            if (notes.length > 5) msg += `\nПоказаны 5 последних из ${notes.length}`;
             addCwMessage('ai', msg);
         }
         cwIsLoading = false; document.getElementById('cwSendBtn').disabled = false;
         return;
     }
 
+    // Дедлайны — сортировка по приоритету, без завершённых/архивных
     if (lower.includes('дедлайн') || lower === 'сроки' || lower === 'deadlines') {
         const notes = getNotes();
-        const deadlines = notes.filter(n => n.deadline).sort((a, b) => a.deadline.localeCompare(b.deadline));
-        if (deadlines.length === 0) { addCwMessage('ai', '✅ Нет задач с дедлайнами.'); }
-        else {
-            const today = getTodayStr();
-            let msg = `⏰ *Ближайшие дедлайны:*\n\n`;
+        const today = getTodayStr();
+        const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+        const deadlines = notes
+            .filter(n => n.deadline && !n._completed && !n._archived)
+            .sort((a, b) => {
+                // Сортировка: сначала по приоритету, потом по дате дедлайна
+                const pA = priorityOrder[a.priority] ?? 99;
+                const pB = priorityOrder[b.priority] ?? 99;
+                if (pA !== pB) return pA - pB;
+                return a.deadline.localeCompare(b.deadline);
+            });
+        if (deadlines.length === 0) {
+            addCwMessage('ai', '✅ Нет активных задач с дедлайнами.');
+        } else {
+            const priorityEmoji = { critical: '🔥', high: '🔴', medium: '🟡', low: '🟢' };
+            let msg = `⏰ Ближайшие дедлайны (по важности):\n\n`;
             deadlines.slice(0, 10).forEach((n, i) => {
                 const isOverdue = n.deadline < today;
                 const isToday = n.deadline === today;
                 const daysLeft = Math.ceil((new Date(n.deadline) - new Date()) / (1000 * 60 * 60 * 24));
-                let icon = isOverdue ? '⚠️' : isToday ? '🔴' : '📅';
-                if (daysLeft === 1) icon = '⏰';
-                msg += `${icon} ${n.title.substring(0, 30)} — ${n.deadline}`;
+                const emoji = priorityEmoji[n.priority] || '📝';
+                let statusIcon = isOverdue ? '⚠️' : isToday ? '🔴' : daysLeft === 1 ? '⏰' : '📅';
+                msg += `${i + 1}. ${emoji} ${statusIcon} ${n.title.substring(0, 35)} — ${n.deadline}`;
                 if (!isOverdue && daysLeft > 0 && daysLeft < 30) msg += ` (осталось ${daysLeft} дн.)`;
                 if (isToday) msg += ` (СЕГОДНЯ!)`;
                 if (isOverdue) msg += ` (ПРОСРОЧЕНО!)`;
                 if (daysLeft === 1) msg += ` (ЗАВТРА!)`;
                 msg += '\n';
             });
+            if (deadlines.length > 10) msg += `\n...и ещё ${deadlines.length - 10} задач.`;
             addCwMessage('ai', msg);
         }
         cwIsLoading = false; document.getElementById('cwSendBtn').disabled = false;
         return;
     }
 
+    // Помощь
     if (lower.includes('что ты умеешь') || lower === 'помощь' || lower === 'help' || lower === 'команды') {
         addCwMessage('ai',
-            `🤖 *Vein's AI Assistant*\n\n` +
-            `📝 *Доступные команды:*\n\n` +
+            `Vein's AI Assistant\n\n` +
+            `Доступные команды:\n\n` +
             `• "создай заметку [текст]" — новая заметка\n` +
-            `  (можно добавить "дедлайн 25.12.2026")\n` +
-            `• "мои заметки" — список последних заметок\n` +
+            `• "мои заметки" — список последних\n` +
             `• "дедлайны" — все задачи со сроками\n` +
-            `• "помощь" — эта справка\n\n` +
-            `🤖 *Любой другой вопрос* — отвечает ИИ (когда Ollama подключена)\n\n` +
-            `💡 *Совет:* В личном кабинете вы можете привязать VK ID\n` +
-            `и получать уведомления о заметках в ВКонтакте!`
+            `• Любой другой вопрос — отвечает ИИ`
         );
         cwIsLoading = false; document.getElementById('cwSendBtn').disabled = false;
         return;
     }
 
+    // Отправляем в Ollama
     try {
         showTypingIndicator();
         const notes = getNotes();
-        const deadlines = notes.filter(n => n.deadline).map(n => `- "${n.title}" (дедлайн: ${n.deadline}, приоритет: ${n.priority})`).join('\n');
+        const activeNotes = notes.filter(n => !n._completed && !n._archived);
+        const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+        const deadlines = activeNotes
+            .filter(n => n.deadline)
+            .sort((a, b) => {
+                const pA = priorityOrder[a.priority] ?? 99;
+                const pB = priorityOrder[b.priority] ?? 99;
+                if (pA !== pB) return pA - pB;
+                return a.deadline.localeCompare(b.deadline);
+            })
+            .map(n => `- ${n.priority === 'critical' ? '🔥' : n.priority === 'high' ? '🔴' : n.priority === 'low' ? '🟢' : '🟡'} "${n.title}" (дедлайн: ${n.deadline}, приоритет: ${n.priority})`)
+            .join('\n');
         const userName = currentUser ? currentUser.name : 'Пользователь';
-        const userEmail = currentUser ? currentUser.email : 'unknown@user';
-        const context = deadlines
-            ? `Имя пользователя: ${userName}. email: ${userEmail}. У пользователя есть заметки с дедлайнами:\n${deadlines}\n\nВсего заметок: ${notes.length}`
-            : `Имя пользователя: ${userName}. email: ${userEmail}. У пользователя ${notes.length} заметок. Дедлайнов нет.`;
+        const vkId = DB.get('veins_vk_id_' + currentUser.email, '');
+        
+        const context = `Имя пользователя: ${userName}. ${vkId ? 'VK ID: ' + vkId : 'VK не привязан'}.` +
+            (deadlines ? `\n\nАктивные заметки с дедлайнами (по важности):\n${deadlines}\n\nВсего активных заметок: ${activeNotes.length}` : `\n\nВсего активных заметок: ${activeNotes.length}. Дедлайнов нет.`);
 
         const response = await fetch(`${API_BASE}/api/ollama`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: text, context: `Ты помогаешь с заметками. ${context}` })
+            body: JSON.stringify({ prompt: text, context })
         });
         const data = await response.json();
         removeTypingIndicator();
@@ -987,51 +1220,44 @@ async function sendChatWidgetMessage() {
                 renderNotes(); renderCalendar(); renderSelectedDayNotes(); renderImportantTasks();
                 showToast(`✅ Заметка "${n.title}" создана AI!`, 'success');
 
-                const vkId = DB.get('veins_vk_id_' + currentUser.email, '');
-                if (vkId) {
-                    try { await fetch(`${API_BASE}/api/notify-vk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vk_id: vkId, note: n, action: 'created' }) }); } catch (e) {}
-                }
-            }
-
-            if (data.response.includes('#NAVIGATE')) {
-                const navMatch = data.response.match(/#NAVIGATE\s+(\w+)/);
-                if (navMatch) {
-                    const page = navMatch[1];
-                    if (page === 'profile') navigateTo('profile');
-                    else if (page === 'contacts') navigateTo('contacts');
-                    else navigateTo('workspace');
-                    showToast(`📄 Открываю "${page === 'profile' ? 'личный кабинет' : page === 'contacts' ? 'контакты' : 'рабочее пространство'}"`, 'info');
-                }
-                return;
+                if (vkId) await notifyVKFromSite(vkId, newNote);
             }
         } else {
-            addCwMessage('ai', '🤖 ИИ временно недоступен. Попробуйте позже, когда Ollama будет запущена.\n\nℹ️ Доступные команды: "создай заметку", "мои заметки", "дедлайны"');
+            addCwMessage('ai', '🤖 ИИ временно недоступен. Используйте команды: "создай заметку", "мои заметки", "дедлайны"');
         }
     } catch (e) {
         removeTypingIndicator();
-        addCwMessage('ai', '⚠️ Ошибка подключения к ИИ. Проверьте, запущен ли сервер и Ollama (ollama serve).');
+        addCwMessage('ai', '⚠️ Ошибка подключения к ИИ. Проверьте, запущен ли сервер (localhost:3000) и Ollama (ollama serve).');
     }
 
     cwIsLoading = false;
     document.getElementById('cwSendBtn').disabled = false;
 }
 
-// ===================== ПРОВЕРКА ДЕДЛАЙНОВ (на сайте) =====================
+// ===================== ПРОВЕРКА ДЕДЛАЙНОВ =====================
 function checkDeadlinesOnSite() {
     if (!currentUser) return;
     const notes = getNotes();
     const today = getTodayStr();
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-    let notifications = [];
+    
     notes.forEach(note => {
         if (!note.deadline) return;
-        if (note.deadline === today && !note._notifiedSite) { notifications.push(`⚠️ ДЕДЛАЙН СЕГОДНЯ: "${note.title}"`); note._notifiedSite = true; }
-        if (note.deadline === tomorrow && !note._notifiedSite) { notifications.push(`⏰ Напоминание: "${note.title}" — дедлайн ЗАВТРА`); note._notifiedSite = true; }
+        if (note.deadline === today && !note._notifiedSite) {
+            showToast(`⚠️ ДЕДЛАЙН СЕГОДНЯ: "${note.title}"`, 'warning');
+            note._notifiedSite = true;
+            // Отправляем уведомление в VK
+            const vkId = DB.get('veins_vk_id_' + currentUser.email, '');
+            if (vkId) notifyVKFromSite(vkId, { title: note.title, deadline: note.deadline, date: note.date, priority: 'high', content: '⚠️ ДЕДЛАЙН СЕГОДНЯ!' });
+        }
+        if (note.deadline === tomorrow && !note._notifiedSite) {
+            showToast(`⏰ Напоминание: "${note.title}" — дедлайн ЗАВТРА`, 'warning');
+            note._notifiedSite = true;
+            const vkId = DB.get('veins_vk_id_' + currentUser.email, '');
+            if (vkId) notifyVKFromSite(vkId, { title: note.title, deadline: note.deadline, date: note.date, priority: 'medium', content: '⏰ Дедлайн ЗАВТРА!' });
+        }
     });
-    if (notifications.length > 0) {
-        notifications.forEach(msg => { showToast(msg, 'warning'); });
-        saveNotesArr(notes);
-    }
+    saveNotesArr(notes);
 }
 
 // ===================== LANGUAGE =====================
@@ -1098,13 +1324,11 @@ function applyLanguage() {
     localize(lang);
     renderNotes(); renderCalendar(); renderSelectedDayNotes(); renderImportantTasks(); renderContacts(); updateProfileDisplay();
 }
-
 function loadLanguage() {
     const lang = DB.get('veins_lang_' + currentUser.email, 'ru');
     document.getElementById('langSelect').value = lang;
     localize(lang);
 }
-
 function localize(lang) {
     const t = translations[lang] || translations.ru;
     const navItems = document.querySelectorAll('.sidebar-nav .nav-item');
@@ -1151,10 +1375,13 @@ function localize(lang) {
     calMonth = new Date().getMonth();
     calYear = new Date().getFullYear();
     selectedCalDate = getTodayStr();
-    if (handleVkAuthCallback()) { return; }
-    const saved = DB.getCurrentUser();
-    if (saved) { currentUser = saved; initApp(); }
-    else { showAuthPage('login'); document.getElementById('chatWidgetBtn').style.display = 'none'; }
+    
+    if (!handleVkAuthCallback()) {
+        const saved = DB.getCurrentUser();
+        if (saved) { currentUser = saved; initApp(); }
+        else { showAuthPage('login'); document.getElementById('chatWidgetBtn').style.display = 'none'; }
+    }
+    
     setTimeout(() => {
         checkDeadlinesOnSite();
         setInterval(checkDeadlinesOnSite, 5 * 60 * 1000);

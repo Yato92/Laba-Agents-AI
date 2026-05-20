@@ -8,222 +8,57 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <style>
-        /* ========== ПЛАВАЮЩИЙ ЧАТ-ВИДЖЕТ ========== */
         .chat-widget-btn {
-            position: fixed;
-            bottom: 24px;
-            right: 24px;
-            width: 56px;
-            height: 56px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #3B82F6, #8B5CF6);
-            color: white;
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            box-shadow: 0 4px 20px rgba(59,130,246,0.4);
-            transition: all 0.3s ease;
-            z-index: 9999;
+            position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px;
+            border-radius: 50%; background: linear-gradient(135deg, #3B82F6, #8B5CF6);
+            color: white; border: none; cursor: pointer; display: flex;
+            align-items: center; justify-content: center; font-size: 24px;
+            box-shadow: 0 4px 20px rgba(59,130,246,0.4); transition: all 0.3s ease; z-index: 9999;
         }
-        .chat-widget-btn:hover {
-            transform: scale(1.1);
-            box-shadow: 0 6px 30px rgba(59,130,246,0.6);
-        }
+        .chat-widget-btn:hover { transform: scale(1.1); box-shadow: 0 6px 30px rgba(59,130,246,0.6); }
         .chat-widget-btn .badge {
-            position: absolute;
-            top: -4px;
-            right: -4px;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: #EF4444;
-            color: white;
-            font-size: 11px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
+            position: absolute; top: -4px; right: -4px; width: 20px; height: 20px;
+            border-radius: 50%; background: #EF4444; color: white; font-size: 11px;
+            display: flex; align-items: center; justify-content: center; font-weight: 700;
         }
         .chat-widget-panel {
-            position: fixed;
-            bottom: 90px;
-            right: 24px;
-            width: 360px;
-            height: 520px;
-            background: var(--bg-card);
-            border-radius: 16px;
-            box-shadow: 0 10px 60px rgba(0,0,0,0.5);
-            border: 1px solid var(--border);
-            display: none;
-            flex-direction: column;
-            z-index: 9998;
-            overflow: hidden;
-            animation: chatSlideIn 0.3s ease;
+            position: fixed; bottom: 90px; right: 24px; width: 360px; height: 520px;
+            background: var(--bg-card); border-radius: 16px; box-shadow: 0 10px 60px rgba(0,0,0,0.5);
+            border: 1px solid var(--border); display: none; flex-direction: column; z-index: 9998;
+            overflow: hidden; animation: chatSlideIn 0.3s ease;
         }
         .chat-widget-panel.open { display: flex; }
-        @keyframes chatSlideIn {
-            from { opacity: 0; transform: translateY(20px) scale(0.95); }
-            to { opacity: 1; transform: translateY(0) scale(1); }
-        }
+        @keyframes chatSlideIn { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
         .chat-widget-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 14px 18px;
-            background: linear-gradient(135deg, #1E1E50, #141336);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 18px; background: linear-gradient(135deg, #1E1E50, #141336);
             border-bottom: 1px solid var(--border);
         }
-        .chat-widget-header .cw-title {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 15px;
-            font-weight: 600;
-        }
-        .chat-widget-header .cw-title .cw-status {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #10B981;
-            display: inline-block;
-            animation: pulse 2s infinite;
-        }
+        .chat-widget-header .cw-title { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; }
+        .chat-widget-header .cw-title .cw-status { width: 8px; height: 8px; border-radius: 50%; background: #10B981; display: inline-block; animation: pulse 2s infinite; }
         .chat-widget-header .cw-title .cw-status.offline { background: #EF4444; animation: none; }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        .chat-widget-close {
-            width: 28px;
-            height: 28px;
-            border: none;
-            border-radius: 50%;
-            background: rgba(255,255,255,0.1);
-            color: var(--text);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            transition: all 0.2s ease;
-        }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .chat-widget-close { width: 28px; height: 28px; border: none; border-radius: 50%; background: rgba(255,255,255,0.1); color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.2s ease; }
         .chat-widget-close:hover { background: rgba(255,255,255,0.2); }
-        .chat-widget-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 14px 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-        .cw-message {
-            max-width: 85%;
-            padding: 10px 14px;
-            border-radius: 12px;
-            font-size: 13px;
-            line-height: 1.5;
-            word-wrap: break-word;
-        }
-        .cw-message.ai {
-            background: rgba(59,130,246,0.1);
-            border: 1px solid rgba(59,130,246,0.2);
-            align-self: flex-start;
-            border-bottom-left-radius: 4px;
-        }
-        .cw-message.user {
-            background: var(--primary);
-            color: white;
-            align-self: flex-end;
-            border-bottom-right-radius: 4px;
-        }
-        .cw-message .cw-meta {
-            font-size: 10px;
-            opacity: 0.6;
-            margin-top: 4px;
-        }
-        .cw-message .cw-typing {
-            display: flex;
-            gap: 4px;
-            align-items: center;
-        }
-        .cw-message .cw-typing span {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: var(--text-secondary);
-            animation: typingDot 1.4s infinite;
-        }
-        .cw-message .cw-typing span:nth-child(2) { animation-delay: 0.2s; }
-        .cw-message .cw-typing span:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes typingDot {
-            0%, 60%, 100% { opacity: 0.3; }
-            30% { opacity: 1; }
-        }
-        .chat-widget-input {
-            display: flex;
-            gap: 8px;
-            padding: 10px 14px;
-            border-top: 1px solid var(--border);
-            background: rgba(0,0,0,0.1);
-        }
-        .chat-widget-input input {
-            flex: 1;
-            padding: 10px 14px;
-            border: 1.5px solid var(--border);
-            border-radius: 10px;
-            font-size: 13px;
-            font-family: var(--font);
-            outline: none;
-            transition: var(--transition);
-            background: var(--bg-page);
-            color: var(--text);
-        }
+        .chat-widget-messages { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+        .cw-message { max-width: 85%; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.5; word-wrap: break-word; }
+        .cw-message.ai { background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2); align-self: flex-start; border-bottom-left-radius: 4px; }
+        .cw-message.user { background: var(--primary); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .cw-message .cw-meta { font-size: 10px; opacity: 0.6; margin-top: 4px; }
+        .cw-message .cw-typing { display: flex; gap: 4px; align-items: center; }
+        .cw-message .cw-typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-secondary); animation: typingDot 1.4s infinite; }
+        .cw-message .cw-typing span:nth-child(2) { animation-delay: 0.2s; } .cw-message .cw-typing span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typingDot { 0%, 60%, 100% { opacity: 0.3; } 30% { opacity: 1; } }
+        .chat-widget-input { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); background: rgba(0,0,0,0.1); }
+        .chat-widget-input input { flex: 1; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 13px; font-family: var(--font); outline: none; transition: var(--transition); background: var(--bg-page); color: var(--text); }
         .chat-widget-input input:focus { border-color: var(--primary); }
         .chat-widget-input input::placeholder { color: #555580; }
-        .chat-widget-input button {
-            width: 40px;
-            height: 40px;
-            border: none;
-            border-radius: 10px;
-            background: var(--primary);
-            color: white;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease;
-        }
+        .chat-widget-input button { width: 40px; height: 40px; border: none; border-radius: 10px; background: var(--primary); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; }
         .chat-widget-input button:hover { background: var(--primary-hover); }
         .chat-widget-input button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        .cw-suggestions {
-            display: flex;
-            gap: 6px;
-            padding: 8px 14px;
-            border-top: 1px solid var(--border);
-            flex-wrap: wrap;
-        }
-        .cw-suggestions button {
-            padding: 5px 12px;
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            background: transparent;
-            color: var(--text-secondary);
-            font-size: 11px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-family: var(--font);
-        }
-        .cw-suggestions button:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-            background: rgba(59,130,246,0.1);
-        }
-
-        /* Светлая тема для чата */
+        .cw-suggestions { display: flex; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+        .cw-suggestions button { padding: 5px 12px; border: 1px solid var(--border); border-radius: 16px; background: transparent; color: var(--text-secondary); font-size: 11px; cursor: pointer; transition: all 0.2s ease; font-family: var(--font); }
+        .cw-suggestions button:hover { border-color: var(--primary); color: var(--primary); background: rgba(59,130,246,0.1); }
         body.light-theme .chat-widget-panel { background: #FFFFFF; }
         body.light-theme .chat-widget-header { background: linear-gradient(135deg, #F3F4F6, #E5E7EB); }
         body.light-theme .chat-widget-header .cw-title { color: #1F2937; }
@@ -231,22 +66,11 @@
         body.light-theme .chat-widget-input { background: #F9FAFB; }
         body.light-theme .chat-widget-input input { background: #FFFFFF; color: #1F2937; }
         body.light-theme .chat-widget-input input::placeholder { color: #9CA3AF; }
-
-        /* Адаптив */
-        @media (max-width: 480px) {
-            .chat-widget-panel {
-                width: calc(100% - 32px);
-                height: calc(100% - 120px);
-                bottom: 80px;
-                right: 16px;
-            }
-        }
+        @media (max-width: 480px) { .chat-widget-panel { width: calc(100% - 32px); height: calc(100% - 120px); bottom: 80px; right: 16px; } }
     </style>
 </head>
 <body>
-
 <div id="app">
-
     <!-- ==================== СТРАНИЦА ВХОДА ==================== -->
     <div id="page-login" class="page">
         <div class="auth-logo">
@@ -257,24 +81,11 @@
             <h1>Вход</h1>
             <p class="auth-subtitle">Войдите в свой аккаунт</p>
             <form id="loginForm">
-                <div class="form-group">
-                    <label>Email</label>
-                    <input type="email" id="loginEmail" placeholder="Введите Email-адрес..." required>
-                </div>
-                <div class="form-group">
-                    <label>Пароль</label>
-                    <input type="password" id="loginPassword" placeholder="Введите пароль..." required>
-                </div>
+                <div class="form-group"><label>Email</label><input type="email" id="loginEmail" placeholder="Введите Email-адрес..." required></div>
+                <div class="form-group"><label>Пароль</label><input type="password" id="loginPassword" placeholder="Введите пароль..." required></div>
                 <p class="form-error" id="loginError"></p>
                 <button type="submit" class="btn btn-primary btn-full">Войти</button>
             </form>
-            <div class="vk-auth-section" style="margin-top: 16px; text-align: center; border-top: 1px solid var(--border); padding-top: 16px;">
-                <p style="color: var(--text-secondary); font-size: 12px; margin-bottom: 10px;">Или войдите через</p>
-                <button class="btn btn-vk" onclick="loginWithVK()">
-                    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M23.45 4.34c.45-.7 0-1.26-.8-1.26h-3.52c-.68 0-1 .35-1.24.73 0 0-1.45 3.2-3.5 5.27-.62.56-1.02.24-1.02-.44V4.34c0-.6-.17-.86-.75-.86H8.96c-.44 0-.7.32-.7.63 0 .66.99.8 1.1 2.66v4.03c0 .9-.2 1.06-.63 1.06-.98 0-3.38-3.27-4.78-7.01-.28-.7-.56-.97-1.24-.97H.9c-.9 0-1.08.44-1.08.9 0 .86 1.03 5.27 4.8 8.9C6.44 15.2 8.1 16 9.62 16c.7 0 .86-.3.86-.84v-2.01c0-.47.2-.56.43-.56.24 0 .6.12 1.56 1.1 1.36 1.38 1.56 2 2.65 2h2.04c.78 0 1.17-.3.95-.87-.24-.64-.99-1.38-1.76-2.16-.52-.5-1.3-1.03-1.53-1.3-.33-.42-.02-.73.08-.97 0 0 2.56-3.6 2.96-4.92z'/%3E%3C/svg%3E" alt="VK" style="width:20px;height:20px;">
-                    Войти через VK
-                </button>
-            </div>
             <div class="auth-links">
                 <a href="#" onclick="showAuthPage('register')">Нет аккаунта? Зарегистрироваться</a>
                 <a href="#" onclick="showAuthPage('forgot')">Забыли пароль?</a>
@@ -292,22 +103,10 @@
             <h1>Регистрация</h1>
             <p class="auth-subtitle">Создайте аккаунт для работы с заметками</p>
             <form id="registerForm">
-                <div class="form-group">
-                    <label>Email</label>
-                    <input type="email" id="regEmail" placeholder="Введите Email-адрес..." required>
-                </div>
-                <div class="form-group">
-                    <label>UserName</label>
-                    <input type="text" id="regUsername" placeholder="Введите имя пользователя..." required>
-                </div>
-                <div class="form-group">
-                    <label>Пароль</label>
-                    <input type="password" id="regPassword" placeholder="Введите пароль..." minlength="6" required>
-                </div>
-                <div class="form-group">
-                    <label>Подтвердите пароль</label>
-                    <input type="password" id="regPassword2" placeholder="Введите пароль еще раз..." required>
-                </div>
+                <div class="form-group"><label>Email</label><input type="email" id="regEmail" placeholder="Введите Email-адрес..." required></div>
+                <div class="form-group"><label>UserName</label><input type="text" id="regUsername" placeholder="Введите имя пользователя..." required></div>
+                <div class="form-group"><label>Пароль</label><input type="password" id="regPassword" placeholder="Введите пароль..." minlength="6" required></div>
+                <div class="form-group"><label>Подтвердите пароль</label><input type="password" id="regPassword2" placeholder="Введите пароль еще раз..." required></div>
                 <p class="form-error" id="regError"></p>
                 <button type="submit" class="btn btn-primary btn-full">Зарегистрироваться</button>
             </form>
@@ -319,10 +118,7 @@
 
     <!-- ==================== ВЕРИФИКАЦИЯ ==================== -->
     <div id="page-verify" class="page">
-        <div class="auth-logo">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Vein's</span>
-        </div>
+        <div class="auth-logo"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Vein's</span></div>
         <div class="auth-card verify-card">
             <h1>Подтверждение</h1>
             <p class="auth-subtitle" id="verifySubtitle">Мы отправили код на вашу почту</p>
@@ -343,45 +139,28 @@
 
     <!-- ==================== ВОССТАНОВЛЕНИЕ ПАРОЛЯ ==================== -->
     <div id="page-forgot" class="page">
-        <div class="auth-logo">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Vein's</span>
-        </div>
+        <div class="auth-logo"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Vein's</span></div>
         <div class="auth-card">
             <h1>Восстановление пароля</h1>
             <p class="auth-subtitle">Введите email, мы отправим код для сброса пароля</p>
             <form id="forgotForm">
-                <div class="form-group">
-                    <label>Email</label>
-                    <input type="email" id="forgotEmail" placeholder="Введите Email-адрес..." required>
-                </div>
+                <div class="form-group"><label>Email</label><input type="email" id="forgotEmail" placeholder="Введите Email-адрес..." required></div>
                 <p class="form-error" id="forgotError"></p>
                 <button type="submit" class="btn btn-primary btn-full">Отправить код</button>
             </form>
-            <div class="auth-links">
-                <a href="#" onclick="showAuthPage('login')">Вспомнили пароль? Войти</a>
-            </div>
+            <div class="auth-links"><a href="#" onclick="showAuthPage('login')">Вспомнили пароль? Войти</a></div>
         </div>
     </div>
 
     <!-- ==================== СБРОС ПАРОЛЯ ==================== -->
     <div id="page-reset" class="page">
-        <div class="auth-logo">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>Vein's</span>
-        </div>
+        <div class="auth-logo"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Vein's</span></div>
         <div class="auth-card">
             <h1>Новый пароль</h1>
             <p class="auth-subtitle">Придумайте новый пароль для входа</p>
             <form id="resetForm">
-                <div class="form-group">
-                    <label>Новый пароль</label>
-                    <input type="password" id="resetPassword" placeholder="Введите новый пароль..." minlength="6" required>
-                </div>
-                <div class="form-group">
-                    <label>Подтвердите пароль</label>
-                    <input type="password" id="resetPassword2" placeholder="Введите пароль еще раз..." required>
-                </div>
+                <div class="form-group"><label>Новый пароль</label><input type="password" id="resetPassword" placeholder="Введите новый пароль..." minlength="6" required></div>
+                <div class="form-group"><label>Подтвердите пароль</label><input type="password" id="resetPassword2" placeholder="Введите пароль еще раз..." required></div>
                 <p class="form-error" id="resetError"></p>
                 <button type="submit" class="btn btn-primary btn-full">Сохранить пароль</button>
             </form>
@@ -391,55 +170,34 @@
     <!-- ==================== ГЛАВНОЕ ПРИЛОЖЕНИЕ ==================== -->
     <div id="page-app" class="page app-layout">
         <aside class="sidebar" id="sidebar">
-            <div class="sidebar-logo">
-                <svg width="28" height="28" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                <span>Vein's</span>
-            </div>
+            <div class="sidebar-logo"><svg width="28" height="28" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#3B82F6"/><path d="M8 16L14 22L24 10" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Vein's</span></div>
             <nav class="sidebar-nav">
                 <a href="#" class="nav-item active" data-page="workspace"><i class="fas fa-th-large"></i><span>Главная</span></a>
                 <a href="#" class="nav-item" data-page="profile"><i class="fas fa-user"></i><span>Личный кабинет</span></a>
                 <a href="#" class="nav-item" data-page="contacts"><i class="fas fa-address-book"></i><span>Контакты</span></a>
             </nav>
-            <div class="sidebar-bottom">
-                <a href="#" class="nav-item" onclick="scrollToSettings()"><i class="fas fa-cog"></i><span>Настройки</span></a>
-            </div>
+            <div class="sidebar-bottom"><a href="#" class="nav-item" onclick="scrollToSettings()"><i class="fas fa-cog"></i><span>Настройки</span></a></div>
         </aside>
-
         <main class="main-area" id="mainArea">
             <header class="top-bar">
                 <div class="top-bar-left"><span class="top-bar-title">Рабочее пространство</span></div>
                 <div class="top-bar-right" onclick="navigateTo('profile')" style="cursor:pointer;">
                     <div class="top-user-avatar" id="topAvatar"></div>
-                    <div class="top-user-info">
-                        <span class="top-user-name" id="topName"></span>
-                        <span class="top-user-mail" id="topMail"></span>
-                    </div>
+                    <div class="top-user-info"><span class="top-user-name" id="topName"></span><span class="top-user-mail" id="topMail"></span></div>
                 </div>
             </header>
-
             <section id="page-workspace" class="page-content active">
                 <div class="workspace-grid">
                     <div class="workspace-left">
-                        <div class="section-title-row">
-                            <h2><i class="fas fa-file-alt"></i> Мои заметки</h2>
-                            <button class="btn btn-primary btn-sm" onclick="openNoteModal()"><i class="fas fa-plus"></i> Создать</button>
-                        </div>
+                        <div class="section-title-row"><h2><i class="fas fa-file-alt"></i> Мои заметки</h2><button class="btn btn-primary btn-sm" onclick="openNoteModal()"><i class="fas fa-plus"></i> Создать</button></div>
                         <div class="notes-list" id="notesList"></div>
                     </div>
                     <div class="workspace-right">
                         <div class="calendar-widget">
-                            <div class="cal-header">
-                                <button class="btn-icon-sm" onclick="calPrev()"><i class="fas fa-chevron-left"></i></button>
-                                <span id="calMonthYear" class="cal-month-label">Май 2026</span>
-                                <button class="btn-icon-sm" onclick="calNext()"><i class="fas fa-chevron-right"></i></button>
-                            </div>
+                            <div class="cal-header"><button class="btn-icon-sm" onclick="calPrev()"><i class="fas fa-chevron-left"></i></button><span id="calMonthYear" class="cal-month-label">Май 2026</span><button class="btn-icon-sm" onclick="calNext()"><i class="fas fa-chevron-right"></i></button></div>
                             <div class="cal-weekdays"><span>ПН</span><span>ВТ</span><span>СР</span><span>ЧТ</span><span>ПТ</span><span>СБ</span><span>ВС</span></div>
                             <div class="cal-days" id="calDays"></div>
-                            <div class="cal-legend">
-                                <span><span class="legend-dot dot-default"></span> Есть заметка</span>
-                                <span><span class="legend-dot dot-deadline"></span> Есть дедлайн</span>
-                                <span><span class="legend-dot dot-important"></span> Важная</span>
-                            </div>
+                            <div class="cal-legend"><span><span class="legend-dot dot-default"></span> Есть заметка</span><span><span class="legend-dot dot-deadline"></span> Есть дедлайн</span><span><span class="legend-dot dot-important"></span> Важная</span></div>
                         </div>
                         <div class="calendar-day-notes" id="calendarDayNotes">
                             <h3>Заметки на <span id="calSelectedDate">выбранную дату</span></h3>
@@ -453,7 +211,6 @@
                     </div>
                 </div>
             </section>
-
             <section id="page-profile" class="page-content">
                 <div class="content-header"><h1><i class="fas fa-user-circle"></i> Личный кабинет</h1></div>
                 <div class="profile-layout">
@@ -478,20 +235,28 @@
                         <h2><i class="fas fa-cog"></i> Настройки аккаунта</h2>
                         <div class="setting-row"><span id="langLabel">Язык интерфейса</span><select id="langSelect" onchange="applyLanguage()"><option value="ru">Русский</option><option value="en">English</option></select></div>
                         <div class="setting-row"><span id="themeLabel">Тема оформления</span><select id="themeSelect" onchange="applyTheme()"><option value="dark">🌙 Тёмная</option><option value="light">☀️ Светлая</option></select></div>
-                        <div class="setting-row"><span id="notifLabel">Уведомления</span><label class="toggle"><input type="checkbox" id="notifToggle" checked><span class="toggle-slider"></span></label></div>
+                        <div class="setting-row"><span id="notifLabel" title="Включает и выключает отправку уведомлений в VK">🔔 Уведомления в VK</span><label class="toggle"><input type="checkbox" id="notifToggle" checked onchange="toggleVkNotifications()"><span class="toggle-slider"></span></label></div>
                         <div class="setting-row">
                             <span>Привязка к VK</span>
                             <div style="display:flex;gap:8px;align-items:center;">
                                 <input type="text" id="vkLinkInput" placeholder="Ваш VK ID" style="padding:5px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font);background:var(--bg-page);color:var(--text);width:120px;outline:none;">
                                 <button class="btn btn-primary btn-sm" onclick="linkVkAccount()" style="padding:5px 12px;font-size:12px;">Привязать</button>
+                                <button id="btnUnlinkVk" class="btn btn-secondary btn-sm" onclick="unlinkVkAccount()" style="padding:5px 12px;font-size:12px;display:none;">Отвязать</button>
                             </div>
+                        </div>
+                        <div class="vk-instructions" style="margin-top:12px;padding:12px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:10px;font-size:12px;color:var(--text-secondary);line-height:1.6;">
+                            <strong style="color:var(--primary);">💡 Как привязать VK:</strong><br>
+                            1. Узнайте свой <strong>VK ID</strong>: <em>Настройки VK → Адрес страницы → скопируйте цифры из ссылки (например, vk.com/<strong>id123456789</strong>)</em><br>
+                            2. Вставьте ID в поле выше и нажмите <strong>«Привязать»</strong><br>
+                            3. <strong>Обязательно напишите боту слово «привет»:</strong> <a href="https://vk.me/club238851353" target="_blank" style="color:var(--primary);">vk.me/club238851353</a><br>
+                            ⚠️ <strong>Без этого уведомления в VK приходить не будут!</strong><br>
+                            После привязки вы будете получать уведомления о новых заметках и дедлайнах прямо в VK.
                         </div>
                         <button class="btn btn-danger btn-sm" onclick="deleteAccount()"><i class="fas fa-trash"></i> <span id="delBtnLabel">Удалить аккаунт</span></button>
                         <button class="btn btn-secondary btn-sm" onclick="logout()" style="margin-top:10px;"><i class="fas fa-sign-out-alt"></i> Выйти</button>
                     </div>
                 </div>
             </section>
-
             <section id="page-contacts" class="page-content">
                 <div class="content-header">
                     <h1><i class="fas fa-address-book"></i> Контакты</h1>
@@ -502,12 +267,10 @@
                 </div>
                 <div class="contacts-list" id="contactsList"></div>
             </section>
-
         </main>
     </div>
 
     <!-- ==================== МОДАЛКИ ==================== -->
-
     <div class="modal-overlay" id="modalEditProfile">
         <div class="modal">
             <div class="modal-header"><h2>Редактирование профиля</h2><button class="modal-close" onclick="closeModal('modalEditProfile')">&times;</button></div>
@@ -526,7 +289,6 @@
             <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('modalEditProfile')">Отмена</button><button class="btn btn-primary" onclick="saveProfile()">Изменить</button></div>
         </div>
     </div>
-
     <div class="modal-overlay" id="modalNewContact">
         <div class="modal">
             <div class="modal-header"><h2>Новый контакт</h2><button class="modal-close" onclick="closeModal('modalNewContact')">&times;</button></div>
@@ -541,7 +303,6 @@
             <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('modalNewContact')">Отмена</button><button class="btn btn-primary" onclick="saveNewContact()">Добавить</button></div>
         </div>
     </div>
-
     <div class="modal-overlay" id="modalChat">
         <div class="modal modal-chat">
             <div class="modal-header"><h2>Чат — <span id="chatName">Мария Соколова</span></h2><button class="modal-close" onclick="closeModal('modalChat')">&times;</button></div>
@@ -552,17 +313,11 @@
             <div class="chat-input-row"><input type="text" id="chatInput" placeholder="Написать сообщение..." onkeydown="if(event.key==='Enter') sendChatMsg()"><button class="btn btn-primary btn-sm" onclick="sendChatMsg()"><i class="fas fa-paper-plane"></i></button></div>
         </div>
     </div>
-
     <div class="modal-overlay" id="modalCall">
         <div class="modal-call">
-            <div class="call-content">
-                <div class="call-icon"><i class="fas fa-phone-alt"></i></div>
-                <h2 id="callName">Мария Соколова</h2><p>ЗВОНОК</p>
-                <button class="btn btn-danger btn-call-end" onclick="closeModal('modalCall')"><i class="fas fa-phone-slash"></i></button>
-            </div>
+            <div class="call-content"><div class="call-icon"><i class="fas fa-phone-alt"></i></div><h2 id="callName">Мария Соколова</h2><p>ЗВОНОК</p><button class="btn btn-danger btn-call-end" onclick="closeModal('modalCall')"><i class="fas fa-phone-slash"></i></button></div>
         </div>
     </div>
-
     <div class="modal-overlay" id="modalVideo">
         <div class="modal-call">
             <div class="call-content">
@@ -574,7 +329,6 @@
             </div>
         </div>
     </div>
-
     <div class="modal-overlay" id="modalNote">
         <div class="modal">
             <div class="modal-header"><h2 id="noteModalTitle">Редактировать заметку</h2><button class="modal-close" onclick="closeModal('modalNote')">&times;</button></div>
@@ -598,31 +352,21 @@
             <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('modalNote')">Отмена</button><button class="btn btn-primary" onclick="saveNote()"><i class="fas fa-save"></i> Сохранить</button></div>
         </div>
     </div>
-
     <div id="toastContainer"></div>
 </div>
 
 <!-- ==================== ПЛАВАЮЩИЙ ЧАТ-ВИДЖЕТ OLLAMA ==================== -->
-<button class="chat-widget-btn" id="chatWidgetBtn" onclick="toggleChatWidget()">
+<button class="chat-widget-btn" id="chatWidgetBtn" onclick="toggleChatWidget()" style="display:none;">
     <i class="fas fa-robot"></i>
     <span class="badge" id="chatWidgetBadge" style="display:none;">1</span>
 </button>
-
 <div class="chat-widget-panel" id="chatWidgetPanel">
     <div class="chat-widget-header">
-        <div class="cw-title">
-            <span class="cw-status" id="cwStatus"></span>
-            🤖 Vein's AI
-        </div>
+        <div class="cw-title"><span class="cw-status" id="cwStatus"></span> 🤖 Vein's AI</div>
         <button class="chat-widget-close" onclick="toggleChatWidget()"><i class="fas fa-times"></i></button>
     </div>
-    <div class="chat-widget-messages" id="cwMessages">
-        <div class="cw-message ai">
-            👋 Привет! Я ИИ-ассистент. Могу помочь с заметками, напомнить о дедлайнах и ответить на вопросы.
-            <div class="cw-meta">Ассистент Vein's</div>
-        </div>
-    </div>
-    <div class="cw-suggestions">
+    <div class="chat-widget-messages" id="cwMessages"></div>
+    <div class="cw-suggestions" id="cwSuggestions">
         <button onclick="sendSuggestedMessage('Создай заметку')">📝 Создать заметку</button>
         <button onclick="sendSuggestedMessage('Мои дедлайны')">⏰ Дедлайны</button>
         <button onclick="sendSuggestedMessage('Что ты умеешь?')">❓ Помощь</button>
@@ -633,7 +377,6 @@
     </div>
 </div>
 
-<!-- EmailJS SDK -->
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="app.js"></script>
 </body>

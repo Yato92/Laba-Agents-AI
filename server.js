@@ -16,17 +16,20 @@ const PORT = process.env.PORT || 3000;
 const SALT_ROUNDS = 10;
 
 // ===================== VK БОТ =====================
-let vkBot = null;
 let vkNotify = null;
-let vkNotes = null;
+let vkCheckDeadlines = null;
+let vkHandleMessage = null;
+let vkCheckToken = null;
 
 try {
     const vkModule = require('./vk-bot');
-    vkBot = vkModule.startBot;
     vkNotify = vkModule.notifyVKUser;
-    vkNotes = vkModule.loadNotes;
+    vkCheckDeadlines = vkModule.checkDeadlinesAndNotify;
+    vkHandleMessage = vkModule.handleVkMessage;
+    vkCheckToken = vkModule.checkToken;
+    console.log('✅ VK модуль загружен (прямые HTTP-запросы).');
 } catch (e) {
-    console.log('⚠️ VK-бот не подключен (vk-io может быть не установлен):', e.message);
+    console.log('⚠️ VK модуль не загружен:', e.message);
 }
 
 // ===================== МИДЛВАРЫ =====================
@@ -243,9 +246,9 @@ app.post('/api/notes', async (req, res) => {
             if (user && user.vk_id) {
                 const vkToken = process.env.VK_TOKEN;
                 const emojiMap = { low: '🟢', medium: '🟡', high: '🔴', critical: '🔥' };
-                let msg = `✅ Новая заметка!\n\n${emojiMap[note.priority] || '📝'} ${note.title || 'Без названия'}`;
+                let msg = `━━━━━━━━━━━━━━━━\n✅ Новая заметка!\n\n${emojiMap[note.priority] || '📝'} ${note.title || 'Без названия'}`;
                 if (note.deadline) msg += `\n⏰ Дедлайн: ${note.deadline}`;
-                msg += `\n\n🌐 http://localhost:${PORT}`;
+                msg += `\n━━━━━━━━━━━━━━━━`;
                 
                 fetch(`https://api.vk.com/method/messages.send?user_id=${user.vk_id}&message=${encodeURIComponent(msg)}&random_id=${Date.now()}&access_token=${vkToken}&v=5.199`)
                     .catch(e => console.log('VK notify unavailable:', e.message));
@@ -316,38 +319,36 @@ app.post('/api/ollama', async (req, res) => {
         const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
         const model = process.env.OLLAMA_MODEL || 'llama3.1:8b';
 
-        // Формируем промпт с контекстом
-        const systemPrompt = `Ты — дружелюбный и полезный ИИ-ассистент Vein's Notes. Твоя задача — помогать пользователю управлять его заметками.
+        // Компактный system prompt (без лишних токенов — экономит контекст)
+        const systemPrompt = `Ты — ИИ-ассистент Vein's Notes. 
+Если просят создать заметку: ответь "#CREATE_NOTE {title, description, deadline, importance}".
+Если просят перейти: "#NAVIGATE workspace/profile/contacts".
+Отвечай кратко, дружелюбно, с эмодзи.`;
 
-ФУНКЦИИ:
-1. Если пользователь ПРОСИТ СОЗДАТЬ ЗАМЕТКУ — напиши "#CREATE_NOTE" и после него JSON с полями: title, description, deadline (YYYY-MM-DD), importance (low/medium/high/critical).
-   Пример: "Создай заметку купить подарок, дедлайн 25.12.2026, важно"
-   Ответ: "Хорошо! #CREATE_NOTE {"title": "Купить подарок", "description": "Купить подарок на день рождения", "deadline": "2026-12-25", "importance": "high"} Заметка создана! 🎉"
+        // Обрезаем контекст до 800 символов максимум во избежание переполнения
+        let trimmedContext = context || '';
+        if (trimmedContext.length > 800) {
+            trimmedContext = trimmedContext.substring(0, 800) + '...';
+        }
 
-2. Если пользователь ПРОСИТ ОТКРЫТЬ СТРАНИЦУ или ПЕРЕЙТИ куда-то — напиши "#NAVIGATE" и название страницы: workspace (главная/рабочее пространство), profile (личный кабинет), contacts (контакты).
-   Пример: "Открой профиль" → "#NAVIGATE profile" или "Покажи контакты" → "#NAVIGATE contacts"
-   Доступные страницы: workspace (главная), profile (личный кабинет/профиль), contacts (контакты)
-   
-3. Если пользователь просто общается — отвечай дружелюбно, помогай с вопросами, давай советы по организации задач.
+        const fullPrompt = trimmedContext
+            ? `${systemPrompt}\n\nКонтекст:\n${trimmedContext}\n\nВопрос: ${prompt}`
+            : `${systemPrompt}\n\nВопрос: ${prompt}`;
 
-4. Если информации для создания заметки не хватает — вежливо спроси: "Уточните заголовок", "Какой дедлайн?", "Какая важность?"
-
-Будь вежливым, используй эмодзи, говори кратко и по делу. На сайте тебя открывают через чат-виджет справа снизу.`;
-
-        const fullPrompt = context
-            ? `${systemPrompt}\n\nКонтекст:\n${context}\n\nВопрос пользователя: ${prompt}`
-            : `${systemPrompt}\n\nВопрос пользователя: ${prompt}`;
+        // Если промпт слишком длинный — обрезаем вопрос
+        const finalPrompt = fullPrompt.length > 2000 ? fullPrompt.substring(0, 2000) : fullPrompt;
 
         const response = await fetch(`${ollamaUrl}/api/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 model: model,
-                prompt: fullPrompt,
+                prompt: finalPrompt,
                 stream: false,
                 options: {
                     temperature: 0.7,
-                    top_p: 0.9
+                    num_predict: 150,
+                    num_ctx: 4096
                 }
             })
         });
@@ -425,13 +426,18 @@ app.post('/api/notify-vk', async (req, res) => {
         if (!token) return res.status(400).json({ success: false, error: 'VK_TOKEN не настроен' });
         
         const emoji = { low: '🟢', medium: '🟡', high: '🔴', critical: '🔥' };
-        let msg = action === 'created'
-            ? `✅ Новая заметка создана!\n\n${emoji[note.importance || note.priority] || '📝'} ${note.title || 'Без названия'}`
-            : `🔄 Заметка обновлена: ${note.title || 'Без названия'}`;
+        let msg;
+        if (action === 'completed') {
+            msg = `━━━━━━━━━━━━━━━━\n✅ Задача выполнена!\n\n🎉 ${note.title || 'Без названия'}`;
+        } else if (action === 'created') {
+            msg = `━━━━━━━━━━━━━━━━\n✅ Новая заметка создана!\n\n${emoji[note.importance || note.priority] || '📝'} ${note.title || 'Без названия'}`;
+        } else {
+            msg = `━━━━━━━━━━━━━━━━\n🔄 Заметка обновлена: ${note.title || 'Без названия'}`;
+        }
         
         if (note.deadline) msg += `\n⏰ Дедлайн: ${note.deadline}`;
         if (note.description) msg += `\n📄 ${note.description.substring(0, 100)}`;
-        msg += `\n\n🌐 Подробнее: http://localhost:${PORT}`;
+        msg += `\n━━━━━━━━━━━━━━━━`;
         
         const vkRes = await fetch(`https://api.vk.com/method/messages.send?user_id=${vk_id}&message=${encodeURIComponent(msg)}&random_id=${Date.now()}&access_token=${token}&v=5.199`);
         const vkData = await vkRes.json();
@@ -592,6 +598,66 @@ app.get('/api/vk-oauth-callback', async (req, res) => {
     }
 });
 
+// ===================== GOOGLE OAUTH =====================
+app.get('/api/google-oauth-callback', async (req, res) => {
+    try {
+        const { code, error: authError } = req.query;
+        if (authError || !code) return res.redirect('/?error=google_no_code');
+
+        const clientId = process.env.GOOGLE_CLIENT_ID || '';
+        const clientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
+        const redirectUri = `${req.protocol}://${req.get('host')}/api/google-oauth-callback`;
+
+        // Обмен кода на токен
+        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                code,
+                client_id: clientId,
+                client_secret: clientSecret,
+                redirect_uri: redirectUri,
+                grant_type: 'authorization_code'
+            })
+        });
+        const tokenData = await tokenRes.json();
+        if (!tokenData.access_token) return res.redirect('/?error=google_token_failed');
+
+        // Получаем данные пользователя
+        const userRes = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+            headers: { Authorization: `Bearer ${tokenData.access_token}` }
+        });
+        const userData = await userRes.json();
+        const email = userData.email?.trim().toLowerCase();
+        const name = userData.name || userData.given_name || 'Google User';
+
+        if (!email) return res.redirect('/?error=google_no_email');
+
+        // Сохраняем / находим пользователя
+        await new Promise((resolve, reject) => {
+            db.get('SELECT email FROM users WHERE email = ?', [email], (err, row) => {
+                if (err) reject(err);
+                else resolve(row);
+            });
+        }).then(async (existing) => {
+            if (!existing) {
+                await new Promise((resolve, reject) => {
+                    db.run(
+                        'INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)',
+                        [email, name, 'google_oauth_'],
+                        function (err) { if (err) reject(err); else resolve(); }
+                    );
+                });
+            }
+        });
+
+        res.redirect(`/?google_auth=${encodeURIComponent(JSON.stringify({ email, name }))}`);
+    } catch (e) {
+        console.error('Google OAuth error:', e.message);
+        res.redirect('/?error=google_server_error');
+    }
+});
+
 // ===================== CRON: ПРОВЕРКА ДЕДЛАЙНОВ =====================
 app.get('/cron/check-deadlines', async (req, res) => {
     try {
@@ -643,14 +709,23 @@ app.listen(PORT, () => {
     console.log(`  📞 VK Callback: POST http://localhost:${PORT}/vk-callback`);
     console.log(`============================================`);
 
-    // Запускаем VK бота
-    if (vkBot) {
-        try {
-            vkBot().catch(e => console.error('❌ Ошибка VK бота:', e.message));
-        } catch (e) {
-            console.log('⚠️ VK-бот не запущен (установите vk-io: npm install vk-io)');
-        }
+    // Инициализация VK модуля
+    if (vkCheckToken) {
+        vkCheckToken().then(ok => {
+            if (ok) {
+                console.log('✅ VK токен валиден. Уведомления и Callback API активны.');
+                // Проверка дедлайнов каждые 30 минут
+                if (vkCheckDeadlines) {
+                    try { vkCheckDeadlines(db); } catch (e) {}
+                    setInterval(() => { try { vkCheckDeadlines(db); } catch (e) {} }, 30 * 60 * 1000);
+                    console.log('⏰ Планировщик напоминаний запущен (каждые 30 мин).');
+                }
+            } else {
+                console.log('⚠️ VK токен невалиден. Уведомления в VK не будут работать.');
+                console.log('   Получите токен в настройках сообщества: Управление → Работа с API → Ключи доступа');
+            }
+        }).catch(e => console.log('⚠️ Ошибка проверки VK токена:', e.message));
     } else {
-        console.log('⚠️ VK-бот не запущен (установите vk-io: npm install vk-io)');
+        console.log('⚠️ VK модуль не загружен. Уведомления в VK отключены.');
     }
 });

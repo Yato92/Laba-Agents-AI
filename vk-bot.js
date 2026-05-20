@@ -1,426 +1,348 @@
 // ============================================================
-//  Vein's Notes — VK Long Poll Bot
-//  Функции: напоминания о дедлайнах, уведомления о заметках
-//  ============================================================
+//  Vein's Notes — VK Bot (чистый HTTP API, без vk-io)
+//  Функции: отправка уведомлений, напоминания о дедлайнах
+//  Получение сообщений — через Callback API в server.js
+// ============================================================
 
-const { VK } = require('vk-io');
-const { toASCII } = require('punycode');
 const path = require('path');
 const fs = require('fs');
-
-// Загрузка .env
 require('dotenv').config();
 
 const VK_TOKEN = process.env.VK_TOKEN;
+const VK_API_VERSION = '5.199';
 const GROUP_ID = parseInt(process.env.VK_GROUP_ID || '0', 10);
 
-if (!VK_TOKEN) {
-    console.error('❌ VK_TOKEN не найден в .env!');
-    process.exit(1);
-}
-
-const vk = new VK({ token: VK_TOKEN });
-
-// ===================== ХРАНИЛИЩЕ ЗАМЕТОК (локальный JSON) =====================
-const NOTES_FILE = path.join(__dirname, 'vk_notes.json');
-
-function loadNotes() {
+// ===================== ОТПРАВКА СООБЩЕНИЯ В VK =====================
+async function sendVkMessage(userId, message, keyboard = null) {
+    if (!VK_TOKEN) {
+        console.error('❌ VK_TOKEN не настроен');
+        return { error: 'no_token' };
+    }
     try {
-        if (fs.existsSync(NOTES_FILE)) {
-            return JSON.parse(fs.readFileSync(NOTES_FILE, 'utf-8'));
+        const params = new URLSearchParams({
+            user_id: userId,
+            random_id: Math.floor(Math.random() * 2147483647),
+            message: message.substring(0, 4096),
+            access_token: VK_TOKEN,
+            v: VK_API_VERSION
+        });
+        if (keyboard) params.append('keyboard', JSON.stringify(keyboard));
+        
+        const res = await fetch(`https://api.vk.com/method/messages.send?${params.toString()}`);
+        const data = await res.json();
+        
+        if (data.error) {
+            if (data.error.error_code === 7) {
+                console.log(`⚠️ Нет доступа писать пользователю ${userId} — пусть напишет боту первым: https://vk.me/club${GROUP_ID}`);
+            } else if (data.error.error_code === 902) {
+                console.error(`❌ VK_TOKEN невалидный! Перевыпустите ключ доступа.`);
+            } else if (data.error.error_code === 900) {
+                console.log(`⛔ Пользователь ${userId} запретил сообщения (в чёрном списке).`);
+            } else {
+                console.error(`❌ VK API error (${data.error.error_code}): ${data.error.error_msg}`);
+            }
+            return data;
         }
+        console.log(`📨 VK: сообщение отправлено пользователю ${userId} (message_id: ${data.response})`);
+        return data;
     } catch (e) {
-        console.error('Ошибка загрузки заметок:', e.message);
+        console.error(`❌ VK send error:`, e.message);
+        return { error: e.message };
     }
-    return {};
 }
 
-function saveNotes(notes) {
+// ===================== УВЕДОМЛЕНИЕ О НОВОЙ ЗАМЕТКЕ =====================
+async function notifyVKUser(userVkId, note, action = 'created') {
     try {
-        fs.writeFileSync(NOTES_FILE, JSON.stringify(notes, null, 2), 'utf-8');
+        const emoji = { low: '🟢', medium: '🟡', high: '🔴', critical: '🔥' };
+        const importance = note.importance || note.priority || 'medium';
+        let msg = action === 'completed'
+            ? `✅ *Задача выполнена!*\n\n🎉 ${note.title || note.description || 'Без названия'}`
+            : action === 'created'
+                ? `━━━━━━━━━━━━━━━━\n✅ *Новая заметка!*\n\n${emoji[importance] || '📝'} ${note.title || note.description || 'Без названия'}`
+                : `🔄 *Заметка обновлена:* ${note.title || note.description || 'Без названия'}`;
+        
+        if (note.deadline) msg += `\n⏰ Дедлайн: ${note.deadline}`;
+        if (note.description) msg += `\n📄 ${note.description.substring(0, 100)}`;
+        msg += `\n━━━━━━━━━━━━━━━━`;
+        msg += `\n🌐 Сайт: http://localhost:3000`;
+        
+        const result = await sendVkMessage(userVkId, msg);
+        if (result.response) {
+            console.log(`📨 Уведомление отправлено ${userVkId} (${note.title || note.description})`);
+            return true;
+        }
+        return false;
     } catch (e) {
-        console.error('Ошибка сохранения заметок:', e.message);
+        console.error(`Ошибка уведомления ВК ${userVkId}:`, e.message);
+        return false;
     }
 }
 
-// IDs пользователей ВК, которым разрешено пользоваться ботом
-// Пока разрешаем всем (можно ограничить позже)
-let allowedUsers = [];
-
-// Текущий контекст разговора для каждого пользователя
-const userContext = {};
-
-// ===================== ПОЛУЧЕНИЕ ПОЛЬЗОВАТЕЛЕЙ =====================
-function getUserVkId(userId) {
-    return parseInt(userId, 10);
-}
-
-// ===================== ПАРСИНГ ЗАМЕТКИ =====================
-function parseNote(text) {
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    const firstLine = lines[0] || '';
-
-    // Определяем приоритет
-    let priority = 'medium';
-    if (firstLine.toLowerCase().includes('крит') || firstLine.includes('🔥')) priority = 'critical';
-    else if (firstLine.toLowerCase().includes('важн') || firstLine.includes('🔴')) priority = 'high';
-    else if (firstLine.toLowerCase().includes('низк') || firstLine.includes('🟢')) priority = 'low';
-
-    // Убираем метку приоритета из заголовка
-    let title = firstLine.replace(/\[(крит|важн|сред|низк)\]/i, '').replace(/[🔥🔴🟡🟢]/g, '').trim();
-    if (!title) title = 'Заметка из ВК';
-
-    // Ищем дату дедлайна
-    const dateMatch = text.match(/дедлайн[:\s]*(\d{1,2})[.\/](\d{1,2})(?:[.\/](\d{4}))?/i);
-    let deadline = '';
-    if (dateMatch) {
-        const d = dateMatch[1].padStart(2, '0');
-        const m = dateMatch[2].padStart(2, '0');
-        const y = dateMatch[3] || new Date().getFullYear();
-        deadline = `${y}-${m}-${d}`;
+// ===================== НАПОМИНАНИЯ О ДЕДЛАЙНАХ (из SQLite БД) =====================
+async function checkDeadlinesAndNotify(db) {
+    if (!VK_TOKEN || !db) {
+        console.log('⏰ Пропуск проверки дедлайнов (нет токена или БД).');
+        return { sent: 0, total: 0 };
     }
-
-    // Извлекаем теги
-    const tags = (text.match(/#\w+/g) || []).map(t => t.toLowerCase());
-
-    // Контент —всё кроме первой строки
-    const content = lines.slice(1).join('\n');
-
-    return {
-        title,
-        content: content || title,
-        deadline,
-        priority,
-        tags,
-        date: new Date().toISOString().split('T')[0]
-    };
-}
-
-// ===================== ФОРМАТИРОВАНИЕ ЗАМЕТКИ ДЛЯ ВК =====================
-function formatNoteForVK(note) {
-    const emoji = { low: '🟢', medium: '🟡', high: '🔴', critical: '🔥' };
-    let msg = `${emoji[note.priority] || '📝'} *${note.title}*\n`;
-    if (note.deadline) msg += `⏰ Дедлайн: ${note.deadline}\n`;
-    if (note.tags && note.tags.length) msg += `🏷️ Теги: ${note.tags.join(' ')}\n`;
-    if (note.content && note.content !== note.title) msg += `📄 ${note.content.substring(0, 100)}\n`;
-    msg += `\n📅 Создана: ${note.date}`;
-    return msg;
-}
-
-// ===================== ОБРАБОТКА СООБЩЕНИЙ =====================
-async function handleMessage(context) {
-    const userId = context.senderId;
-    const text = context.text?.trim() || '';
-
-    if (!text) return;
-
-    // Проверяем, разрешён ли пользователь
-    if (allowedUsers.length > 0 && !allowedUsers.includes(userId)) {
-        return context.send('⛔ У вас нет доступа к этому боту.');
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+        
+        const notesDue = await new Promise((resolve, reject) => {
+            db.all(
+                `SELECT n.*, u.vk_id FROM notes n 
+                 JOIN users u ON u.email = n.user_email 
+                 WHERE (n.deadline = ? OR n.deadline = ?) AND u.vk_id IS NOT NULL`,
+                [today, tomorrow],
+                (err, rows) => { if (err) reject(err); else resolve(rows); }
+            );
+        });
+        
+        let sent = 0;
+        for (const note of notesDue) {
+            const isToday = note.deadline === today;
+            const msg = isToday
+                ? `⚠️ *ДЕДЛАЙН СЕГОДНЯ!*\n\n📌 "${note.title}"\n⏰ Дедлайн: ${note.deadline}\n\n🔥 Не забудьте завершить задачу!`
+                : `⏰ *Напоминание!*\n\n📌 "${note.title}"\n📅 Дедлайн ЗАВТРА: ${note.deadline}\n\n⏳ Остался 1 день!`;
+            
+            try {
+                const result = await sendVkMessage(note.vk_id, msg);
+                if (result.response) sent++;
+            } catch (e) {
+                console.error(`Cron VK error для ${note.vk_id}:`, e.message);
+            }
+        }
+        
+        if (notesDue.length > 0) {
+            console.log(`⏰ Проверка дедлайнов: ${sent}/${notesDue.length} уведомлений отправлено`);
+        }
+        return { sent, total: notesDue.length };
+    } catch (e) {
+        console.error('❌ Ошибка проверки дедлайнов:', e.message);
+        return { sent: 0, total: 0, error: e.message };
     }
+}
 
-    // Разбиваем команды
+// ===================== ОБРАБОТКА СООБЩЕНИЯ ИЗ VK =====================
+async function handleVkMessage(userId, text, db) {
+    if (!text || text.length < 2) return;
+    
+    const lower = text.toLowerCase().trim();
+    
+    // Помощь
+    if (lower === '/help' || lower === 'помощь' || lower === 'help' || lower === '/start' || lower === 'начать') {
+        return sendVkMessage(userId,
+            `👋 *Привет! Я Vein's Notes Bot!*\n\n` +
+            `📝 *Создать заметку:* просто напишите текст\n` +
+            `  — 🔴 /важно, 🔥 /крит, 🟢 /низк\n` +
+            `  — "дедлайн 25.12.2026"\n` +
+            `  — #теги для категорий\n\n` +
+            `📋 */notes* — мои заметки\n` +
+            `⏰ */deadlines* — дедлайны\n` +
+            `❌ */del <id>* — удалить\n` +
+            `🤖 */ai <вопрос>* — спросить ИИ\n` +
+            `🌐 http://localhost:3000 — сайт\n\n` +
+            `💡 *Важно:* Привяжите VK ID в личном кабинете на сайте для уведомлений!`
+        );
+    }
+    
+    // Команды
     const args = text.split(/\s+/);
     const command = args[0].toLowerCase();
-
+    
     switch (command) {
-        case '/start':
-        case 'начать':
-        case 'помощь':
-        case 'help':
-            await context.send(
-                `🤖 *Vein's Notes Bot*\n\n` +
-                `📝 *Создать заметку:* просто напишите текст\n` +
-                `  — для приоритета: 🔴 /важно, 🔥 /крит, 🟢 /низк\n` +
-                `  — дедлайн: укажите "дедлайн 25.12.2026"\n` +
-                `  — теги: #работа #личное\n\n` +
-                `📋 *Мои заметки:* /notes, /заметки\n` +
-                `❌ *Удалить:* /del <id>\n` +
-                `⏰ *Дедлайны:* /deadlines\n` +
-                `🗑️ *Очистить:* /clear\n\n` +
-                `🤖 *Спросить ИИ:* /ai <вопрос> (когда Ollama подключена)\n` +
-                `❓ /help — эта помощь`
-            );
-            break;
-
         case '/notes':
         case '/заметки':
-        case '/list':
-        case '/список': {
-            const notes = loadNotes();
-            const userNotes = (notes[userId] || []).slice().reverse();
-            if (userNotes.length === 0) {
-                return context.send('📭 У вас нет заметок.');
-            }
-            let msg = `📋 *Ваши заметки (${userNotes.length}):*\n\n`;
-            userNotes.forEach((n, i) => {
-                const emoji = { low: '🟢', medium: '🟡', high: '🔴', critical: '🔥' };
-                msg += `${i + 1}. ${emoji[n.priority]} ${n.title.substring(0, 40)}`;
-                if (n.deadline) msg += ` (⏰ ${n.deadline})`;
-                msg += `\n   ID: ${n.id}\n`;
-            });
-            // Отправляем частями, если много
-            if (msg.length > 4000) {
-                const parts = msg.match(/[\s\S]{1,4000}/g) || [msg];
-                for (const part of parts) {
-                    await context.send(part);
-                }
-            } else {
-                await context.send(msg);
-            }
-            break;
+        case '/list': {
+            if (!db) return sendVkMessage(userId, '⚠️ База данных недоступна.');
+            try {
+                const email = `vk_${userId}@vk.user`;
+                const notes = await new Promise((resolve, reject) => {
+                    db.all('SELECT * FROM notes WHERE user_email = ? ORDER BY created_at DESC LIMIT 10', [email], (err, rows) => {
+                        if (err) reject(err); else resolve(rows);
+                    });
+                });
+                if (!notes.length) return sendVkMessage(userId, '📭 У вас нет заметок.\n\n📝 Напишите любой текст, чтобы создать заметку!');
+                let msg = `📋 *Ваши заметки (${notes.length}):*\n\n`;
+                notes.forEach((n, i) => {
+                    const emoji = { low: '🟢', medium: '🟡', high: '🔴', critical: '🔥' };
+                    msg += `${i + 1}. ${emoji[n.priority] || '📝'} ${n.title.substring(0, 35)}`;
+                    if (n.deadline) msg += ` (⏰ ${n.deadline})`;
+                    msg += `\n   ID: ${n.id}\n`;
+                });
+                return sendVkMessage(userId, msg);
+            } catch (e) { return sendVkMessage(userId, '❌ Ошибка получения заметок.'); }
         }
-
+        
         case '/deadlines':
         case '/дедлайны': {
-            const notes = loadNotes();
-            const userNotes = (notes[userId] || []).filter(n => n.deadline);
-            if (userNotes.length === 0) {
-                return context.send('✅ Нет задач с дедлайнами.');
-            }
-            // Сортируем по ближайшему дедлайну
-            userNotes.sort((a, b) => a.deadline.localeCompare(b.deadline));
-            let msg = `⏰ *Ближайшие дедлайны:*\n\n`;
-            const today = new Date().toISOString().split('T')[0];
-            userNotes.forEach((n, i) => {
-                const isOverdue = n.deadline < today;
-                const isToday = n.deadline === today;
-                const icon = isOverdue ? '⚠️' : isToday ? '🔴' : '📅';
-                const daysLeft = Math.ceil((new Date(n.deadline) - new Date()) / (1000 * 60 * 60 * 24));
-                msg += `${i + 1}. ${icon} ${n.title.substring(0, 30)} — ${n.deadline}`;
-                if (!isOverdue && daysLeft > 0) msg += ` (осталось ${daysLeft} дн.)`;
-                if (isToday) msg += ` (СЕГОДНЯ!)`;
-                if (isOverdue) msg += ` (ПРОСРОЧЕН!)`;
-                msg += `\n   ID: ${n.id}\n`;
-            });
-            await context.send(msg);
-            break;
+            if (!db) return sendVkMessage(userId, '⚠️ База данных недоступна.');
+            try {
+                const email = `vk_${userId}@vk.user`;
+                const notes = await new Promise((resolve, reject) => {
+                    db.all("SELECT * FROM notes WHERE user_email = ? AND deadline != '' ORDER BY deadline ASC", [email], (err, rows) => {
+                        if (err) reject(err); else resolve(rows);
+                    });
+                });
+                if (!notes.length) return sendVkMessage(userId, '✅ Нет задач с дедлайнами.');
+                const today = new Date().toISOString().split('T')[0];
+                let msg = `⏰ *Дедлайны:*\n\n`;
+                notes.forEach((n, i) => {
+                    const icon = n.deadline < today ? '⚠️' : n.deadline === today ? '🔴' : '📅';
+                    msg += `${i + 1}. ${icon} ${n.title.substring(0, 30)} — ${n.deadline}\n`;
+                });
+                return sendVkMessage(userId, msg);
+            } catch (e) { return sendVkMessage(userId, '❌ Ошибка получения дедлайнов.'); }
         }
-
+        
         case '/del':
         case '/delete':
-        case '/удалить':
-        case '/remove': {
+        case '/удалить': {
             const noteId = args[1];
-            if (!noteId) return context.send('❌ Укажите ID заметки: /del <id>');
-            const notes = loadNotes();
-            const userNotes = notes[userId] || [];
-            const idx = userNotes.findIndex(n => n.id === noteId);
-            if (idx === -1) return context.send('❌ Заметка с таким ID не найдена.');
-            userNotes.splice(idx, 1);
-            notes[userId] = userNotes;
-            saveNotes(notes);
-            await context.send('✅ Заметка удалена.');
-            break;
+            if (!noteId) return sendVkMessage(userId, '❌ Укажите ID: /del <id>');
+            if (!db) return sendVkMessage(userId, '⚠️ База данных недоступна.');
+            try {
+                const email = `vk_${userId}@vk.user`;
+                await new Promise((resolve, reject) => {
+                    db.run('DELETE FROM notes WHERE id = ? AND user_email = ?', [noteId, email], function(err) {
+                        if (err) reject(err); else resolve();
+                    });
+                });
+                return sendVkMessage(userId, '✅ Заметка удалена.');
+            } catch (e) { return sendVkMessage(userId, '❌ Ошибка удаления.'); }
         }
-
-        case '/clear':
-        case '/очистить': {
-            const notes = loadNotes();
-            notes[userId] = [];
-            saveNotes(notes);
-            await context.send('🗑️ Все заметки очищены.');
-            break;
-        }
-
+        
         case '/ai':
         case '/ask':
         case '/спросить': {
             const question = text.substring(command.length).trim();
-            if (!question) return context.send('❓ Напишите вопрос после команды /ai');
-            
-            // Пробуем обратиться к Ollama
+            if (!question) return sendVkMessage(userId, '❓ Напишите вопрос: /ai Как дела?');
             try {
-                const response = await fetch(`${process.env.OLLAMA_URL || 'http://localhost:11434'}/api/generate`, {
+                sendVkMessage(userId, '🤖 Думаю...');
+                const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
+                const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.1:8b';
+                const res = await fetch(`${ollamaUrl}/api/generate`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        model: process.env.OLLAMA_MODEL || 'llama3.2',
-                        prompt: question,
-                        stream: false
+                        model: ollamaModel,
+                        prompt: `Ты — ассистент Vein's Notes. Ответь кратко и дружелюбно. Вопрос: ${question}`,
+                        stream: false,
+                        options: { temperature: 0.7, num_predict: 200 }
                     })
                 });
-                const data = await response.json();
+                const data = await res.json();
                 if (data.response) {
-                    // Отправляем ответ частями
-                    const answer = data.response.trim();
-                    if (answer.length > 4000) {
-                        const parts = answer.match(/[\s\S]{1,4000}/g) || [answer];
-                        for (const part of parts) {
-                            await context.send(part);
-                        }
-                    } else {
-                        await context.send(answer);
-                    }
-                } else {
-                    await context.send('🤖 Не удалось получить ответ от ИИ. Проверьте, запущена ли Ollama.');
+                    const answer = data.response.trim().substring(0, 4000);
+                    return sendVkMessage(userId, answer);
                 }
+                return sendVkMessage(userId, '🤖 Не удалось получить ответ от ИИ.');
             } catch (e) {
-                console.error('Ollama error:', e.message);
-                await context.send('🤖 Ollama не отвечает. Убедитесь, что она запущена (ollama serve).');
+                return sendVkMessage(userId, '🤖 ИИ недоступен. Проверьте, запущена ли Ollama (`ollama serve`).');
             }
-            break;
         }
-
+        
         default:
-            // Если не команда — создаём заметку
-            if (text.length > 2) {
-                const note = parseNote(text);
-                note.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
-
-                const notes = loadNotes();
-                if (!notes[userId]) notes[userId] = [];
-                notes[userId].push(note);
-                saveNotes(notes);
-
-                let reply = `✅ *Заметка создана!*\n\n${formatNoteForVK(note)}`;
-                reply += `\n\n❌ Удалить: /del ${note.id}`;
-                await context.send(reply);
-
-                // Оповещаем если есть дедлайн
-                if (note.deadline) {
-                    const daysLeft = Math.ceil((new Date(note.deadline) - new Date()) / (1000 * 60 * 60 * 24));
-                    if (daysLeft <= 1) {
-                        await context.send(`⚠️ *ВНИМАНИЕ!* Дедлайн "${note.title}" уже ${daysLeft <= 0 ? 'СЕГОДНЯ!' : 'ЗАВТРА!'}`);
+            // Создаём заметку из текста
+            if (text.length > 2 && db) {
+                try {
+                    const email = `vk_${userId}@vk.user`;
+                    // Простой парсинг
+                    let priority = 'medium';
+                    if (lower.includes('/крит') || lower.includes('🔥')) priority = 'critical';
+                    else if (lower.includes('/важно') || lower.includes('🔴')) priority = 'high';
+                    else if (lower.includes('/низк') || lower.includes('🟢')) priority = 'low';
+                    
+                    let title = text.replace(/\/[критважнонизк]+/g, '').replace(/[🔥🔴🟡🟢]/g, '').trim().substring(0, 100);
+                    if (!title) title = 'Заметка из ВК';
+                    
+                    const deadMatch = text.match(/дедлайн[:\s]*(\d{1,2})[.\/](\d{1,2})(?:[.\/](\d{4}))?/i);
+                    let deadline = '';
+                    if (deadMatch) {
+                        const d = deadMatch[1].padStart(2, '0');
+                        const m = deadMatch[2].padStart(2, '0');
+                        const y = deadMatch[3] || new Date().getFullYear();
+                        deadline = `${y}-${m}-${d}`;
                     }
-                }
-            }
-    }
-}
-
-// ===================== НАПОМИНАНИЯ О ДЕДЛАЙНАХ =====================
-async function checkDeadlinesAndNotify() {
-    const notes = loadNotes();
-    const today = new Date().toISOString().split('T')[0];
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-
-    for (const [userId, userNotes] of Object.entries(notes)) {
-        for (const note of userNotes) {
-            if (!note.deadline) continue;
-
-            const isDeadlineTomorrow = note.deadline === tomorrow;
-            const isDeadlineToday = note.deadline === today;
-            const notifiedKey = `notified_${note.id}`;
-
-            if (isDeadlineToday && !note._notifiedToday) {
-                try {
-                    await vk.api.messages.send({
-                        peer_id: parseInt(userId),
-                        random_id: Math.floor(Math.random() * 1000000),
-                        message: `⚠️ *ДЕДЛАЙН СЕГОДНЯ!*\n\n📌 "${note.title}"\n📅 Дедлайн: ${note.deadline}\n\n🔥 Не забудьте завершить задачу!`
+                    
+                    const tags = (text.match(/#\w+/g) || []).map(t => t.toLowerCase());
+                    const noteId = Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+                    const today = new Date().toISOString().split('T')[0];
+                    
+                    // Сохраняем пользователя если нет
+                    await new Promise((resolve, reject) => {
+                        db.run('INSERT OR IGNORE INTO users (email, name, password_hash, vk_id) VALUES (?, ?, ?, ?)',
+                            [email, `VK User ${userId}`, 'vk_auto', String(userId)],
+                            (err) => { if (err) reject(err); else resolve(); }
+                        );
+                    }).catch(() => {});
+                    
+                    await new Promise((resolve, reject) => {
+                        db.run(
+                            'INSERT INTO notes (id, user_email, title, content, date, deadline, priority, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                            [noteId, email, title, title, today, deadline, priority, JSON.stringify(tags)],
+                            (err) => { if (err) reject(err); else resolve(); }
+                        );
                     });
-                    note._notifiedToday = true;
-                    console.log(`🔔 Уведомление отправлено пользователю ${userId} (дедлайн сегодня: ${note.title})`);
+                    
+                    let msg = `✅ *Заметка создана!*\n\n`;
+                    const emoji = { low: '🟢', medium: '🟡', high: '🔴', critical: '🔥' };
+                    msg += `${emoji[priority]} ${title}\n`;
+                    if (deadline) msg += `⏰ Дедлайн: ${deadline}\n`;
+                    if (tags.length) msg += `🏷️ ${tags.join(' ')}\n`;
+                    msg += `\n❌ Удалить: /del ${noteId}`;
+                    
+                    return sendVkMessage(userId, msg);
                 } catch (e) {
-                    console.error(`Ошибка отправки уведомления ${userId}:`, e.message);
+                    console.error('VK create note error:', e.message);
+                    return sendVkMessage(userId, '❌ Ошибка создания заметки.');
                 }
+            } else if (text.length > 2 && !db) {
+                return sendVkMessage(userId, '⚠️ База данных недоступна. Запустите сервер (`npm start`).');
             }
-
-            if (isDeadlineTomorrow && !note._notifiedTomorrow) {
-                try {
-                    await vk.api.messages.send({
-                        peer_id: parseInt(userId),
-                        random_id: Math.floor(Math.random() * 1000000),
-                        message: `⏰ *Напоминание!*\n\n📌 "${note.title}"\n📅 Дедлайн ЗАВТРА: ${tomorrow}\n\n⏳ Остался 1 день!`
-                    });
-                    note._notifiedTomorrow = true;
-                    console.log(`🔔 Уведомление отправлено пользователю ${userId} (дедлайн завтра: ${note.title})`);
-                } catch (e) {
-                    console.error(`Ошибка отправки уведомления ${userId}:`, e.message);
-                }
-            }
-        }
-    }
-    saveNotes(notes);
-}
-
-// ===================== СИНХРОНИЗАЦИЯ С ВЕБ-ПРИЛОЖЕНИЕМ =====================
-// Функция для отправки уведомления о заметке, созданной на сайте
-async function notifyVKUser(userVkId, note, action) {
-    try {
-        const emoji = { low: '🟢', medium: '🟡', high: '🔴', critical: '🔥' };
-        let msg = action === 'created'
-            ? `✅ *Новая заметка на сайте!*\n\n${emoji[note.priority] || '📝'} ${note.title}`
-            : `🔄 *Заметка обновлена на сайте:* ${note.title}`;
-
-        if (note.deadline) msg += `\n⏰ Дедлайн: ${note.deadline}`;
-        msg += `\n📅 ${note.date}`;
-
-        await vk.api.messages.send({
-            peer_id: userVkId,
-            random_id: Math.floor(Math.random() * 1000000),
-            message: msg
-        });
-        console.log(`📨 Уведомление отправлено пользователю ВК ${userVkId}`);
-    } catch (e) {
-        console.error(`Ошибка отправки уведомления ВК ${userVkId}:`, e.message);
     }
 }
 
-// ===================== ЗАПУСК БОТА =====================
-async function startBot() {
+// ===================== ПРОВЕРКА ТОКЕНА =====================
+async function checkToken() {
+    if (!VK_TOKEN) {
+        console.error('❌ VK_TOKEN не найден в .env!');
+        return false;
+    }
     try {
-        console.log('🤖 Запуск VK Long Poll бота...');
-
-        // Проверяем токен
-        try {
-            const groupInfo = await vk.api.groups.getById({
-                group_id: GROUP_ID
-            });
-            console.log(`✅ Группа: ${groupInfo.name || 'ID ' + GROUP_ID}`);
-        } catch (e) {
-            console.warn(`⚠️ Не удалось получить информацию о группе: ${e.message}`);
-        }
-
-        // Запускаем Long Poll с обработкой ошибки включения
-        try {
-            vk.updates.on('message', handleMessage);
-            await vk.updates.start();
-            console.log('✅ VK бот запущен и слушает сообщения!');
-        } catch (e) {
-            if (e.message.includes('longpoll') || e.code === 100) {
-                console.warn('⚠️ Long Poll API не включён в настройках сообщества!');
-                console.warn('   Чтобы включить:');
-                console.warn('   1. Зайдите в https://vk.com/club238851353');
-                console.warn('   2. Управление → Работа с API → Long Poll API');
-                console.warn('   3. Включите "Long Poll API" и сохраните');
-                console.warn('   4. Перезапустите бота командой: npm run vk-bot');
-                console.warn('ℹ️ Бот продолжит работать в режиме без VK (напоминания через сайт активны)');
+        const res = await fetch(`https://api.vk.com/method/groups.getById?group_id=${GROUP_ID}&access_token=${VK_TOKEN}&v=${VK_API_VERSION}`);
+        const data = await res.json();
+        if (data.error) {
+            if (data.error.error_code === 5) {
+                console.error('❌ VK_TOKEN недействителен (ошибка авторизации)! Перевыпустите ключ.');
             } else {
-                console.error('❌ Ошибка запуска VK бота:', e.message);
-                if (e.message.includes('access_token')) {
-                    console.error('   Проверьте правильность VK_TOKEN в .env');
-                }
+                console.error(`❌ VK API error при проверке: ${data.error.error_msg} (код ${data.error.error_code})`);
             }
-            return; // Не завершаем процесс, даём серверу работать дальше
+            return false;
         }
-
-        // Запускаем проверку дедлайнов каждые 30 минут
-        console.log('⏰ Запуск планировщика напоминаний (каждые 30 мин)...');
-        try {
-            await checkDeadlinesAndNotify(); // немедленная проверка
-        } catch (e) {
-            console.error('⚠️ Ошибка проверки дедлайнов:', e.message);
+        if (data.response && data.response[0]) {
+            console.log(`✅ VK: группа "${data.response[0].name}" подключена. Токен валиден.`);
+            return true;
         }
-        setInterval(async () => {
-            console.log('🔄 Плановая проверка дедлайнов...');
-            try {
-                await checkDeadlinesAndNotify();
-            } catch (e) {
-                console.error('⚠️ Ошибка проверки дедлайнов:', e.message);
-            }
-        }, 30 * 60 * 1000); // каждые 30 минут
-
+        return true;
     } catch (e) {
-        console.error('❌ Критическая ошибка VK бота:', e.message);
-        // Не завершаем процесс — сервер продолжает работу
+        console.error('❌ Не удалось проверить VK токен:', e.message);
+        return false;
     }
 }
 
 // ===================== ЭКСПОРТ =====================
-module.exports = { startBot, notifyVKUser, loadNotes, saveNotes };
+module.exports = { sendVkMessage, notifyVKUser, checkDeadlinesAndNotify, handleVkMessage, checkToken };
 
-// Запуск при прямом вызове
+// ===================== ЗАПУСК КАК ОТДЕЛЬНЫЙ ПРОЦЕСС =====================
 if (require.main === module) {
-    startBot();
+    (async () => {
+        console.log('🤖 VK Bot — проверка токена...');
+        const ok = await checkToken();
+        if (!ok) process.exit(1);
+        console.log('✅ VK Bot готов к отправке уведомлений.');
+        console.log('ℹ️  Получение сообщений — через Callback API в server.js (/vk-callback)');
+        console.log('ℹ️  Запустите сервер: npm start');
+    })();
 }
