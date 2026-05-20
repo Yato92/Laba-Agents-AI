@@ -7,7 +7,7 @@ require('dotenv').config();
 
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const path = require('path');
 const cors = require('cors');
 
@@ -310,22 +310,26 @@ app.delete('/api/notes/:id', async (req, res) => {
     }
 });
 
-// ===================== OLLAMA API (ИИ-ассистент) =====================
+// ===================== AI API (Groq — Llama 3.1) =====================
 app.post('/api/ollama', async (req, res) => {
     try {
         const { prompt, context } = req.body;
         if (!prompt) return res.status(400).json({ success: false, error: 'prompt обязателен' });
 
-        const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
-        const model = process.env.OLLAMA_MODEL || 'llama3.1:8b';
+        const groqApiKey = process.env.GROQ_API_KEY;
+        const groqModel = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 
-        // Компактный system prompt (без лишних токенов — экономит контекст)
+        // Если нет Groq ключа — пробуем локальную Ollama как fallback
+        const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
+        const useGroq = !!groqApiKey;
+
+        // Компактный system prompt
         const systemPrompt = `Ты — ИИ-ассистент Vein's Notes. 
 Если просят создать заметку: ответь "#CREATE_NOTE {title, description, deadline, importance}".
 Если просят перейти: "#NAVIGATE workspace/profile/contacts".
 Отвечай кратко, дружелюбно, с эмодзи.`;
 
-        // Обрезаем контекст до 800 символов максимум во избежание переполнения
+        // Обрезаем контекст до 800 символов максимум
         let trimmedContext = context || '';
         if (trimmedContext.length > 800) {
             trimmedContext = trimmedContext.substring(0, 800) + '...';
@@ -335,30 +339,61 @@ app.post('/api/ollama', async (req, res) => {
             ? `${systemPrompt}\n\nКонтекст:\n${trimmedContext}\n\nВопрос: ${prompt}`
             : `${systemPrompt}\n\nВопрос: ${prompt}`;
 
-        // Если промпт слишком длинный — обрезаем вопрос
         const finalPrompt = fullPrompt.length > 2000 ? fullPrompt.substring(0, 2000) : fullPrompt;
 
-        const response = await fetch(`${ollamaUrl}/api/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: model,
-                prompt: finalPrompt,
-                stream: false,
-                options: {
+        let aiResponse = '';
+
+        if (useGroq) {
+            // === Groq API (облачный, работает на Vercel) ===
+            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${groqApiKey}`
+                },
+                body: JSON.stringify({
+                    model: groqModel,
+                    messages: [
+                        { role: 'user', content: finalPrompt }
+                    ],
                     temperature: 0.7,
-                    num_predict: 150,
-                    num_ctx: 4096
-                }
-            })
-        });
+                    max_tokens: 300,
+                    stream: false
+                })
+            });
 
-        if (!response.ok) {
-            throw new Error(`Ollama HTTP error: ${response.status}`);
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(`Groq HTTP ${response.status}: ${errText}`);
+            }
+
+            const data = await response.json();
+            aiResponse = data.choices?.[0]?.message?.content || '';
+        } else {
+            // === Fallback: локальная Ollama ===
+            const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.1:8b';
+            const response = await fetch(`${ollamaUrl}/api/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: ollamaModel,
+                    prompt: finalPrompt,
+                    stream: false,
+                    options: {
+                        temperature: 0.7,
+                        num_predict: 150,
+                        num_ctx: 4096
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Ollama HTTP error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            aiResponse = data.response || '';
         }
-
-        const data = await response.json();
-        const aiResponse = data.response || '';
         
         // Парсим #CREATE_NOTE для создания заметки
         let noteCreated = null;
@@ -366,7 +401,6 @@ app.post('/api/ollama', async (req, res) => {
         if (createNoteMatch) {
             try {
                 const noteData = JSON.parse(createNoteMatch[1]);
-                // Извлекаем email из контекста
                 let userEmail = 'ai@vein.notes';
                 if (context) {
                     const emailMatch = context.match(/email:\s*([^\s,]+)/i);
@@ -411,8 +445,8 @@ app.post('/api/ollama', async (req, res) => {
             note: noteCreated
         });
     } catch (err) {
-        console.error('❌ Ошибка Ollama:', err.message);
-        res.json({ success: false, error: 'Ollama недоступна. Убедитесь, что она запущена (ollama serve)', response: null, note_created: false, note: null });
+        console.error('❌ Ошибка AI:', err.message);
+        res.json({ success: false, error: 'AI недоступен: ' + err.message, response: null, note_created: false, note: null });
     }
 });
 
@@ -696,36 +730,41 @@ app.get('/cron/check-deadlines', async (req, res) => {
     }
 });
 
-// ===================== ЗАПУСК =====================
-app.listen(PORT, () => {
-    console.log(`============================================`);
-    console.log(`  🚀 Vein's Notes Server запущен!`);
-    console.log(`  📍 http://localhost:${PORT}`);
-    console.log(`  📝 API: POST http://localhost:${PORT}/api/notes`);
-    console.log(`  🤖 Ollama: POST http://localhost:${PORT}/api/ollama`);
-    console.log(`  👥 Users: GET http://localhost:${PORT}/users`);
-    console.log(`  🔄 VK OAuth: GET http://localhost:${PORT}/api/vk-oauth-url`);
-    console.log(`  ⏰ Cron: GET http://localhost:${PORT}/cron/check-deadlines`);
-    console.log(`  📞 VK Callback: POST http://localhost:${PORT}/vk-callback`);
-    console.log(`============================================`);
+// ===================== ЗАПУСК (Local) / VERCEL =====================
+if (process.env.VERCEL) {
+    // На Vercel — экспортируем app для serverless
+    console.log('✅ Vercel serverless mode: app exported');
+    module.exports = app;
+} else {
+    // Локальный запуск со статической раздачей и cron
+    app.listen(PORT, () => {
+        console.log(`============================================`);
+        console.log(`  🚀 Vein's Notes Server запущен!`);
+        console.log(`  📍 http://localhost:${PORT}`);
+        console.log(`  📝 API: POST http://localhost:${PORT}/api/notes`);
+        console.log(`  🤖 AI: POST http://localhost:${PORT}/api/ollama`);
+        console.log(`  👥 Users: GET http://localhost:${PORT}/users`);
+        console.log(`  🔄 VK OAuth: GET http://localhost:${PORT}/api/vk-oauth-url`);
+        console.log(`  ⏰ Cron: GET http://localhost:${PORT}/cron/check-deadlines`);
+        console.log(`  📞 VK Callback: POST http://localhost:${PORT}/vk-callback`);
+        console.log(`============================================`);
 
-    // Инициализация VK модуля
-    if (vkCheckToken) {
-        vkCheckToken().then(ok => {
-            if (ok) {
-                console.log('✅ VK токен валиден. Уведомления и Callback API активны.');
-                // Проверка дедлайнов каждые 30 минут
-                if (vkCheckDeadlines) {
-                    try { vkCheckDeadlines(db); } catch (e) {}
-                    setInterval(() => { try { vkCheckDeadlines(db); } catch (e) {} }, 30 * 60 * 1000);
-                    console.log('⏰ Планировщик напоминаний запущен (каждые 30 мин).');
+        // Инициализация VK модуля
+        if (vkCheckToken) {
+            vkCheckToken().then(ok => {
+                if (ok) {
+                    console.log('✅ VK токен валиден. Уведомления и Callback API активны.');
+                    if (vkCheckDeadlines) {
+                        try { vkCheckDeadlines(db); } catch (e) {}
+                        setInterval(() => { try { vkCheckDeadlines(db); } catch (e) {} }, 30 * 60 * 1000);
+                        console.log('⏰ Планировщик напоминаний запущен (каждые 30 мин).');
+                    }
+                } else {
+                    console.log('⚠️ VK токен невалиден. Уведомления в VK не будут работать.');
                 }
-            } else {
-                console.log('⚠️ VK токен невалиден. Уведомления в VK не будут работать.');
-                console.log('   Получите токен в настройках сообщества: Управление → Работа с API → Ключи доступа');
-            }
-        }).catch(e => console.log('⚠️ Ошибка проверки VK токена:', e.message));
-    } else {
-        console.log('⚠️ VK модуль не загружен. Уведомления в VK отключены.');
-    }
-});
+            }).catch(e => console.log('⚠️ Ошибка проверки VK токена:', e.message));
+        } else {
+            console.log('⚠️ VK модуль не загружен. Уведомления в VK отключены.');
+        }
+    });
+}

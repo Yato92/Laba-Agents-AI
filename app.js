@@ -10,8 +10,10 @@ const EMAILJS_CONFIG = {
     useEmailJS: true
 };
 
-// Всегда используем localhost:3000 для API
-const API_BASE = 'http://localhost:3000';
+// Авто-определение API URL: на локальной среде — localhost, на Vercel — относительный путь
+const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') 
+    ? 'http://localhost:3000' 
+    : ''; // На production используем относительный путь (тот же origin)
 const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
 
 // ===================== DATA LAYER =====================
@@ -1227,7 +1229,11 @@ async function sendChatWidgetMessage() {
         }
     } catch (e) {
         removeTypingIndicator();
-        addCwMessage('ai', '⚠️ Ошибка подключения к ИИ. Проверьте, запущен ли сервер (localhost:3000) и Ollama (ollama serve).');
+        console.error('❌ AI fetch error:', e.message, e);
+        const errorMsg = e.message.includes('NetworkError') || e.message.includes('Failed to fetch')
+            ? '⚠️ Ошибка подключения к ИИ. Проверьте соединение с интернетом и попробуйте позже.'
+            : '⚠️ Ошибка подключения к ИИ: ' + e.message + '. Попробуйте позже.';
+        addCwMessage('ai', errorMsg);
     }
 
     cwIsLoading = false;
