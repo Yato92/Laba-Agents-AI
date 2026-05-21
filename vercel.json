@@ -1,6 +1,15 @@
 {
   "version": 2,
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+  "framework": null,
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self' 'unsafe-inline' 'unsafe-eval' https:; connect-src 'self' http://localhost:11434 https:; img-src 'self' data: https:; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com"
+        }
+      ]
+    }
   ]
 }
