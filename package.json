@@ -2,9 +2,8 @@
   "name": "veins-notes",
   "version": "2.0.0",
   "description": "Vein's Notes — Умное управление заметками + VK Bot + Ollama AI",
-  "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "local": "node server.js",
     "dev": "node server.js",
     "vk-bot": "node vk-bot.js"
   },
