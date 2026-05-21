@@ -175,18 +175,6 @@ veins-notes/
 
 ---
 
-## 🔄 Запуск на Vercel (без AI)
-
-```bash
-npm install -g vercel
-vercel login
-vercel --prod
-```
-
-На Vercel AI-чат покажет инструкцию: *«AI доступен только локально через Ollama»* — все остальные функции работают.
-
----
-
 ## 🔮 Возможные улучшения
 
 - [ ] Голосовое управление AI (Web Speech API)
