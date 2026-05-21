@@ -310,90 +310,80 @@ app.delete('/api/notes/:id', async (req, res) => {
     }
 });
 
-// ===================== AI API (Groq — Llama 3.1) =====================
+// ===================== AI API (Ollama — локальный) =====================
+// ВАЖНО: AI работает ТОЛЬКО локально. Запустите `ollama serve` + `ollama pull llama3.1:8b`
 app.post('/api/ollama', async (req, res) => {
     try {
         const { prompt, context } = req.body;
         if (!prompt) return res.status(400).json({ success: false, error: 'prompt обязателен' });
 
-        const groqApiKey = process.env.GROQ_API_KEY;
-        const groqModel = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
-
-        // Если нет Groq ключа — пробуем локальную Ollama как fallback
         const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
-        const useGroq = !!groqApiKey;
+        const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.1:8b';
 
-        // Компактный system prompt
-        const systemPrompt = `Ты — ИИ-ассистент Vein's Notes. 
-Если просят создать заметку: ответь "#CREATE_NOTE {title, description, deadline, importance}".
-Если просят перейти: "#NAVIGATE workspace/profile/contacts".
-Отвечай кратко, дружелюбно, с эмодзи.`;
+        // === Системный промпт: специализация на заметках и дедлайнах ===
+        const systemPrompt = `Ты — ИИ-ассистент Vein's Notes — системы управления заметками и задачами.
 
-        // Обрезаем контекст до 800 символов максимум
+ТВОИ ЗАДАЧИ:
+1. Помогать с заметками — создавать, редактировать, напоминать
+2. Помогать с дедлайнами — отслеживать сроки, оценивать приоритеты
+3. Отвечать на вопросы пользователя по его заметкам и задачам
+
+КОМАНДЫ ДЛЯ СОЗДАНИЯ ЗАМЕТОК (используй их когда пользователь просит создать заметку):
+- "#CREATE_NOTE {title: string, description: string, deadline: string (ГГГГ-ММ-ДД), importance: string (low|medium|high|critical)}"
+
+ПРИОРИТЕТЫ ЗАМЕТОК:
+- critical 🔥 — срочно, требует немедленного внимания
+- high 🔴 — важная задача
+- medium 🟡 — обычная задача
+- low 🟢 — не срочно
+
+ПРАВИЛА:
+- Если пользователь просит создать заметку, ВСЕГДА используй #CREATE_NOTE
+- Извлекай дедлайн из текста пользователя (даже если не явно указан, спроси)
+- Отвечай кратко (2-4 предложения), дружелюбно, с эмодзи
+- Если спрашивают о заметках/дедлайнах — используй контекст, который передаётся с вопросом
+- Если просят "напомни о дедлайнах" — предложи отсортировать по важности и сроку
+- Если заметок в контексте нет — просто предложи создать новую`;
+
+        // Обрезаем контекст до 1200 символов (чуть больше для детальных ответов)
         let trimmedContext = context || '';
-        if (trimmedContext.length > 800) {
-            trimmedContext = trimmedContext.substring(0, 800) + '...';
+        if (trimmedContext.length > 1200) {
+            trimmedContext = trimmedContext.substring(0, 1200) + '...';
         }
 
         const fullPrompt = trimmedContext
-            ? `${systemPrompt}\n\nКонтекст:\n${trimmedContext}\n\nВопрос: ${prompt}`
-            : `${systemPrompt}\n\nВопрос: ${prompt}`;
+            ? `${systemPrompt}\n\nКонтекст (заметки и дедлайны пользователя):\n${trimmedContext}\n\nСообщение пользователя: ${prompt}`
+            : `${systemPrompt}\n\nСообщение пользователя: ${prompt}`;
 
-        const finalPrompt = fullPrompt.length > 2000 ? fullPrompt.substring(0, 2000) : fullPrompt;
+        const finalPrompt = fullPrompt.length > 3000 ? fullPrompt.substring(0, 3000) : fullPrompt;
 
         let aiResponse = '';
 
-        if (useGroq) {
-            // === Groq API (облачный, работает на Vercel) ===
-            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${groqApiKey}`
-                },
-                body: JSON.stringify({
-                    model: groqModel,
-                    messages: [
-                        { role: 'user', content: finalPrompt }
-                    ],
+        // === Локальная Ollama ===
+        console.log('🤖 Запрос к Ollama (локально)...');
+        const response = await fetch(`${ollamaUrl}/api/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: ollamaModel,
+                prompt: finalPrompt,
+                stream: false,
+                options: {
                     temperature: 0.7,
-                    max_tokens: 300,
-                    stream: false
-                })
-            });
+                    num_predict: 300,
+                    num_ctx: 4096
+                }
+            })
+        });
 
-            if (!response.ok) {
-                const errText = await response.text();
-                throw new Error(`Groq HTTP ${response.status}: ${errText}`);
-            }
-
-            const data = await response.json();
-            aiResponse = data.choices?.[0]?.message?.content || '';
-        } else {
-            // === Fallback: локальная Ollama ===
-            const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.1:8b';
-            const response = await fetch(`${ollamaUrl}/api/generate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: ollamaModel,
-                    prompt: finalPrompt,
-                    stream: false,
-                    options: {
-                        temperature: 0.7,
-                        num_predict: 150,
-                        num_ctx: 4096
-                    }
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`Ollama HTTP error: ${response.status}`);
-            }
-
-            const data = await response.json();
-            aiResponse = data.response || '';
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Ollama HTTP ${response.status}: ${errText}`);
         }
+
+        const data = await response.json();
+        aiResponse = data.response || '';
+        console.log('✅ Ответ от Ollama получен');
         
         // Парсим #CREATE_NOTE для создания заметки
         let noteCreated = null;

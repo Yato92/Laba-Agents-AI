@@ -1016,17 +1016,24 @@ async function checkOllamaStatus() {
         `${vkId ? '✅ VK привязан! Уведомления будут приходить.' : '💡 Привяжите VK ID в настройках профиля для уведомлений'}`
     );
 
-    // Проверяем Ollama
+    // Проверяем локальный Ollama (только локально)
     try {
-        const response = await fetch(`${API_BASE}/api/ollama`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: 'test' }) });
+        const response = await fetch(`${API_BASE}/api/ollama`, { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ prompt: 'test' }) 
+        });
         const data = await response.json();
         if (data.success) {
             statusDot.classList.remove('offline');
+            statusDot.title = 'AI онлайн (локальная Ollama)';
         } else {
             statusDot.classList.add('offline');
+            statusDot.title = 'AI недоступен (запустите ollama serve)';
         }
     } catch (e) {
         statusDot.classList.add('offline');
+        statusDot.title = 'AI недоступен — сервер не отвечает';
     }
 }
 
